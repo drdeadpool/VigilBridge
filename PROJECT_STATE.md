@@ -1,5 +1,5 @@
 # VigilBridge — Project State
-Last updated: 2026-06-02. Written for zero-context continuation.
+Last updated: 2026-06-03. Written for zero-context continuation.
 
 ---
 
@@ -7,126 +7,37 @@ Last updated: 2026-06-02. Written for zero-context continuation.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Health Connect SDK initialization | ✅ Working | Uses `HealthConnectClient.getOrCreate(this)` |
-| Permission request flow | ✅ Working (partial) | Grant works; auto-transition broken (see Broken) |
-| Permission re-check button | ✅ Working | Manual workaround for the auto-transition bug |
+| Health Connect SDK initialization | ✅ Working | `HealthConnectClient.getOrCreate(this)` |
+| Permission request flow | ✅ Fixed | `rememberLauncherForActivityResult` — auto-transitions on grant |
+| Permission re-check button | ✅ Working | Manual fallback |
 | Steps today (aggregate) | ✅ Working | Midnight local → now, `StepsRecord.COUNT_TOTAL` |
-| Steps last 7 days (aggregate) | ✅ Working | now-7d → now |
-| Steps last 30 days (aggregate) | ✅ Working | now-30d → now |
+| Steps last 7 days | ✅ Working | now-7d → now |
+| Steps last 30 days | ✅ Working | now-30d → now |
 | Sleep duration | ✅ Working | Most recent session in last 48h, formatted `Xh Ym` |
 | Sleep bedtime (start) | ✅ Working | Formatted `EEE h:mm a` |
 | Sleep wake time (end) | ✅ Working | Formatted `h:mm a` |
-| Resting heart rate | ✅ Implemented, unverified | `RestingHeartRateRecord.BPM_AVG` 7-day aggregate. Not confirmed working on device yet — depends on whether Samsung Health writes `RestingHeartRateRecord` to Health Connect |
-| Last sync timestamp | ✅ Working | `Instant.now()` stamped after load, shown at bottom |
-| Dashboard auto-load | ✅ Working | `DashboardViewModel.init { refresh() }` triggers on first composition |
-| Refresh button | ✅ Working | Calls `vm.refresh()`, disabled during load |
-| Loading indicator | ✅ Working | `LinearProgressIndicator` shown during `isLoading = true` |
-| Error resilience | ✅ Working | Each query individually wrapped; failure shows `—`, no crash |
+| Resting heart rate | ✅ Implemented, unverified on device | `RestingHeartRateRecord.BPM_AVG` 7-day. Samsung Health must write resting HR to HC. |
+| Last sync timestamp | ✅ Working | `Instant.now()` after each load |
+| Dashboard auto-load | ✅ Working | `DashboardViewModel.init { refresh() }` |
+| Refresh button | ✅ Working | Disabled during load |
+| Loading indicator | ✅ Working | `LinearProgressIndicator` |
+| Error resilience | ✅ Working | Per-query catch; failure → `—`, no crash |
 | UnavailableScreen | ✅ Working | Shown when HC SDK not present or needs update |
 | PermissionScreen | ✅ Working | Shown when permissions not granted |
-| Clean build | ✅ Verified | `BUILD SUCCESSFUL` on `assembleDebug` |
-| Physical device | ✅ Confirmed | Runs on Samsung Galaxy S24 Ultra |
+| Room database | ✅ Working | `VitalsSnapshot` written after every HC load |
+| Background sync | ✅ Working | WorkManager periodic 15-min job, no notification |
+| Clean build | ✅ Verified | `BUILD SUCCESSFUL` — 37 tasks |
+| Physical device | ✅ Confirmed | Samsung Galaxy S24 Ultra |
 
 ---
 
 ## Broken Features
 
-### BROKEN-1: Permission Gate Does Not Auto-Transition
+### None currently blocking core flows.
 
-**Symptom:** After tapping "Grant Permissions" and granting all permissions in the system dialog, the app stays on `PermissionScreen`. Dashboard does not appear automatically.
-
-**User impact:** Must tap "Re-check Permissions" manually every launch until fixed.
-
-**Root cause:** `permissionsGranted` is Compose state inside `setContent {}`. The `requestPermissionsLauncher` callback is registered at Activity level and cannot update Compose state directly without a bridge.
-
-**Workaround:** "Re-check Permissions" button works correctly.
-
----
-
-### BROKEN-2: UnavailableScreen Uses Magic Integer Literals
-
-**Symptom:** Not a runtime crash, but `UnavailableScreen` uses `1` and `3` for `SDK_UNAVAILABLE` and `SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED` instead of the actual constants from `HealthConnectClient`.
-
-**Risk:** If Jetpack updates the constant values (unlikely but possible), the wrong message shows.
-
----
-
-### BROKEN-3: No onResume Permission Recheck
-
-**Symptom:** If the user grants permissions via Android Settings → App permissions while the app is backgrounded, `permissionsGranted` is stale when they return to the app. No automatic recovery.
-
----
-
-## Exact App Behavior Right Now
-
-### Flow on first launch (no permissions):
-1. Splash → `MainActivity.onCreate()`
-2. HC SDK check passes → `HealthConnectClient` created
-3. `LaunchedEffect(Unit)` queries `getGrantedPermissions()`
-4. Returns empty set → `permissionsGranted = false`
-5. Renders `PermissionScreen`:
-   - Title: "Vigil"
-   - Subtitle: "Health Connect access required"
-   - Button: "Grant Permissions"
-   - Button: "Re-check Permissions"
-
-### Permission grant flow:
-1. Tap "Grant Permissions"
-2. System Health Connect permission dialog appears
-3. User grants Steps, Sleep, Resting Heart Rate
-4. Dialog closes → app returns to `PermissionScreen` (BUG)
-5. User taps "Re-check Permissions"
-6. `getGrantedPermissions()` called → all 3 in set → `permissionsGranted = true`
-7. `VigilScreen` re-renders → creates `HealthRepository` + `DashboardViewModel`
-8. `DashboardViewModel.init { refresh() }` fires immediately
-9. Dashboard shown with `LinearProgressIndicator`
-10. 5 concurrent HC queries execute
-11. Results mapped to `DashboardUiState`
-12. Dashboard renders with all metric cards and sync timestamp
-
-### Dashboard layout (top to bottom):
-```
-Vigil                           [Refresh]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━ (loading bar, hidden when done)
-
-Steps
-┌─────────────────────────────┐
-│ TODAY                        │
-│ 8,432                        │
-└─────────────────────────────┘
-┌─────────────────────────────┐
-│ LAST 7 DAYS                  │
-│ 54,210                       │
-└─────────────────────────────┘
-┌─────────────────────────────┐
-│ LAST 30 DAYS                 │
-│ 231,847                      │
-└─────────────────────────────┘
-
-Sleep
-┌─────────────────────────────┐
-│ DURATION                     │
-│ 7h 23m                       │
-└─────────────────────────────┘
-┌─────────────────────────────┐
-│ BEDTIME                      │
-│ Thu 11:14 PM                 │
-└─────────────────────────────┘
-┌─────────────────────────────┐
-│ WAKE TIME                    │
-│ 6:37 AM                      │
-└─────────────────────────────┘
-
-Heart
-┌─────────────────────────────┐
-│ RESTING HEART RATE           │
-│ 58 bpm                       │
-└─────────────────────────────┘
-
-Synced Jun 2, 11:43 PM
-```
-
-Any failed query shows `—` in the card. No error message or indication of why.
+### Known open issues:
+- **BUG-003:** `UnavailableScreen` uses `1` and `3` literals instead of `HealthConnectClient` constants. Low risk; fix when touching that file.
+- **BUG-006:** Resting HR unverified on device — Samsung Health may not write `RestingHeartRateRecord` to HC. See investigation steps in BUGS.md.
 
 ---
 
@@ -134,89 +45,74 @@ Any failed query shows `—` in the card. No error message or indication of why.
 
 ```
 MainActivity (Activity)
-├── Creates HealthConnectClient once in onCreate()
-├── Holds requestPermissionsLauncher (Activity-level)
-├── Checks initial permissions in LaunchedEffect(Unit)
-├── Owns permissionsGranted: MutableState<Boolean>
+├── getSdkStatus → creates HealthConnectClient
+├── VitalsSyncWorker.schedule(this)          ← schedules 15-min background job
+├── rememberLauncherForActivityResult        ← permission launcher (Compose scope)
+├── LaunchedEffect(Unit)                     ← initial permission check
+├── permissionsGranted: MutableState<Boolean>
 └── setContent → VigilScreen(client, permissionsGranted, ...)
 
-VigilScreen (Composable, DashboardScreen.kt)
+VigilScreen (Composable, ui/DashboardScreen.kt)
 ├── if !permissionsGranted → PermissionScreen
 └── if permissionsGranted
-    ├── remember { HealthRepository(client) }
-    ├── viewModel { DashboardViewModel(repo) }  ← ViewModel factory
+    ├── LocalContext → VigilDatabase.get() → VitalsDao
+    ├── remember { HealthRepository(client, dao) }
+    ├── viewModel { DashboardViewModel(repo) }
     ├── collectAsState() on vm.state
     └── Dashboard(state, onRefresh)
 
-DashboardViewModel (ViewModel, ui/DashboardViewModel.kt)
-├── _state: MutableStateFlow<DashboardUiState>
+DashboardViewModel (ui/DashboardViewModel.kt)
+├── MutableStateFlow<DashboardUiState>
 ├── init { refresh() }
-├── refresh() → viewModelScope.launch { repo.load() → toUiState() }
-└── toUiState() → maps RawDashboard to formatted DashboardUiState strings
+└── refresh() → viewModelScope → repo.load() → toUiState()
 
 HealthRepository (data/HealthRepository.kt)
-├── load() → RawDashboard (calls all 4 queries)
-├── aggregateSteps(TimeRangeFilter) → Long?
-├── readLastSleep(Instant) → SleepSessionRecord?
-└── readRestingHR(Instant) → Long?
+├── load() → RawDashboard + dao.insert(toSnapshot())
+├── aggregateSteps(filter) → Long?
+├── readLastSleep(now) → SleepSessionRecord?
+└── readRestingHR(now) → Long?
+
+VigilDatabase (data/VigilDatabase.kt)
+└── singleton Room DB → vitals_snapshots table
+
+VitalsSyncWorker (work/VitalsSyncWorker.kt)
+├── CoroutineWorker, 15-min periodic
+├── Checks HC SDK status
+├── Checks permissions still granted
+├── Creates HealthRepository(client, dao)
+└── Calls repo.load() → writes snapshot to Room
 ```
 
-**Pattern:** MVVM. No Hilt/DI — manual factory pattern. Repository returns HC SDK types (not yet domain-modeled). ViewModel formats data for display.
+**Pattern:** MVVM. Manual DI (no Hilt). Repository handles all HC queries and Room writes.
+
+---
+
+## Build State
+
+- **Last successful build:** 2026-06-03
+- **Build command:** `JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew assembleDebug`
+- **Result:** `BUILD SUCCESSFUL in 34s — 37 tasks`
+- **Known warning:** `android.disallowKotlinSourceSets=false` — experimental flag required for KSP + AGP 9.x "built-in Kotlin" compatibility. Not a runtime issue.
 
 ---
 
 ## Dependencies and Versions
 
-### Health Connect
-```toml
-healthConnect = "1.1.0-rc01"
-```
-```kotlin
-implementation("androidx.health.connect:connect-client:1.1.0-rc01")
-```
+| Library | Version | Purpose |
+|---|---|---|
+| AGP | 9.2.1 | Android build |
+| Kotlin | 2.2.10 | Language |
+| KSP | 2.2.10-2.0.2 | Room annotation processor |
+| Compose BOM | 2026.02.01 | UI |
+| activity-compose | 1.13.0 | `setContent`, launchers |
+| lifecycle-viewmodel | 2.10.0 | ViewModel + StateFlow |
+| health-connect | 1.1.0-rc01 | Data source |
+| room-runtime + ktx | 2.7.1 | Local persistence |
+| work-runtime-ktx | 2.10.0 | Background sync |
+| coroutines-android | 1.10.2 | Async |
 
-### Lifecycle / ViewModel
-```toml
-lifecycleRuntimeKtx = "2.10.0"
-lifecycleViewmodel = "2.10.0"
-```
-```kotlin
-implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
-implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-```
-
-### Compose
-```toml
-composeBom = "2026.02.01"
-activityCompose = "1.13.0"
-```
-```kotlin
-implementation(platform("androidx.compose:compose-bom:2026.02.01"))
-implementation("androidx.activity:activity-compose:1.13.0")
-implementation("androidx.compose.material3:material3")
-implementation("androidx.compose.ui:ui")
-implementation("androidx.compose.ui:ui-graphics")
-```
-
-### Coroutines
-```kotlin
-implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-```
-
-### Core
-```toml
-coreKtx = "1.18.0"
-kotlin = "2.2.10"
-agp = "9.2.1"
-```
-
-### Min/Target SDK
-- `minSdk = 28` (Android 9, required for Health Connect)
+- `minSdk = 28` (Android 9)
 - `targetSdk = 36`
-- `compileSdk = 36.1` (using `release(36) { minorApiLevel = 1 }` syntax)
-
-### `versionName` = `"1.0"` — **should be updated to `"0.2"`**
 
 ---
 
@@ -224,66 +120,25 @@ agp = "9.2.1"
 
 ```
 VigilBridge/
-├── HANDOVER.md                          ← Detailed session handover (from this session)
-├── PROJECT_STATE.md                     ← This file
-├── NEXT_10_STEPS.md                     ← Prioritized task list
-├── BUGS.md                              ← Bug registry
-├── VIGIL_ROADMAP.md                     ← Version roadmap
-├── PROMPTS.md                           ← Continuation prompts for new sessions
-├── CODE_REVIEW.md                       ← Technical debt register
-├── LESSONS_LEARNED.md                   ← Session learnings
+├── gradle/libs.versions.toml        ← Single source of truth for all dep versions
+├── app/build.gradle.kts             ← App deps; plugins: AGP, kotlin-compose, ksp
+├── build.gradle.kts                 ← Root plugin declarations (apply false)
+├── gradle.properties                ← android.disallowKotlinSourceSets=false (KSP compat)
 │
-├── gradle/
-│   ├── libs.versions.toml               ← Version catalog (single source of truth for deps)
-│   └── wrapper/gradle-wrapper.properties
-│
-└── app/
-    ├── build.gradle.kts                 ← App-level build: deps, compileSdk, minSdk, versionName
-    ├── proguard-rules.pro               ← Empty (minification disabled)
-    └── src/main/
-        ├── AndroidManifest.xml          ← Package, permissions, HC intent filter
-        └── java/com/batman/vigilbridge/
-            │
-            ├── MainActivity.kt
-            │   Responsibilities:
-            │   - Activity lifecycle entry point
-            │   - HealthConnectClient creation (once, in onCreate)
-            │   - Permission launcher registration (Activity-level)
-            │   - Initial permission check (LaunchedEffect)
-            │   - permissionsGranted state ownership
-            │   - Routes to UnavailableScreen or VigilScreen
-            │
-            ├── data/
-            │   └── HealthRepository.kt
-            │       Responsibilities:
-            │       - All Health Connect query logic
-            │       - RawDashboard data class (output model)
-            │       - aggregateSteps(filter) → Long?
-            │       - readLastSleep(now) → SleepSessionRecord?
-            │       - readRestingHR(now) → Long?
-            │       - load() → RawDashboard (calls all queries)
-            │       - Error handling per-query (returns null on failure)
-            │
-            └── ui/
-                ├── DashboardViewModel.kt
-                │   Responsibilities:
-                │   - DashboardUiState data class (all String fields)
-                │   - DashboardViewModel: StateFlow, viewModelScope, init, refresh()
-                │   - toUiState() extension: RawDashboard → DashboardUiState
-                │   - All date/number formatting
-                │   - ViewModelProvider.Factory companion
-                │
-                ├── DashboardScreen.kt
-                │   Responsibilities:
-                │   - UnavailableScreen composable
-                │   - VigilScreen composable (top-level, creates repo+vm)
-                │   - PermissionScreen composable
-                │   - Dashboard composable (layout)
-                │   - SectionLabel composable
-                │   - MetricCard composable
-                │
-                └── theme/
-                    ├── Color.kt         ← Material3 color scheme (default, unchanged)
-                    ├── Theme.kt         ← VigilBridgeTheme wrapper (default, unchanged)
-                    └── Type.kt          ← Typography (default, unchanged)
+└── app/src/main/
+    ├── AndroidManifest.xml          ← HC permissions (READ_STEPS, READ_SLEEP, READ_HEART_RATE)
+    └── java/com/batman/vigilbridge/
+        ├── MainActivity.kt          ← Activity entry, HC init, permission launcher, WorkManager schedule
+        ├── data/
+        │   ├── HealthRepository.kt  ← All HC queries + Room write after each load
+        │   ├── RawDashboard         ← (data class inside HealthRepository.kt)
+        │   ├── VitalsSnapshot.kt    ← Room entity (vitals_snapshots table)
+        │   ├── VitalsDao.kt         ← Room DAO: insert, getLatest, getRecent(n)
+        │   └── VigilDatabase.kt     ← Room DB singleton (vigil.db)
+        ├── ui/
+        │   ├── DashboardScreen.kt   ← All Composables; wires LocalContext→DB→repo
+        │   ├── DashboardViewModel.kt← StateFlow<DashboardUiState>, refresh(), toUiState()
+        │   └── theme/               ← Unchanged Material3 defaults
+        └── work/
+            └── VitalsSyncWorker.kt  ← CoroutineWorker, 15-min periodic HC→Room sync
 ```

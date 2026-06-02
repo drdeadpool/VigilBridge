@@ -16,6 +16,7 @@ import androidx.health.connect.client.records.StepsRecord
 import com.batman.vigilbridge.ui.UnavailableScreen
 import com.batman.vigilbridge.ui.VigilScreen
 import com.batman.vigilbridge.ui.theme.VigilBridgeTheme
+import com.batman.vigilbridge.work.VitalsSyncWorker
 import kotlinx.coroutines.launch
 
 private const val TAG = "MainActivity"
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
 
         if (sdkStatus == HealthConnectClient.SDK_AVAILABLE) {
             healthConnectClient = HealthConnectClient.getOrCreate(this)
+            VitalsSyncWorker.schedule(this)
         }
 
         setContent {
