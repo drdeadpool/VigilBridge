@@ -8,10 +8,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.batman.vigilbridge.data.HealthRepository
+import com.batman.vigilbridge.data.VigilDatabase
 
 @Composable
 fun UnavailableScreen(status: Int) {
@@ -40,7 +42,11 @@ fun VigilScreen(
         return
     }
 
-    val repo = remember(client) { HealthRepository(client) }
+    val context = LocalContext.current
+    val repo = remember(client) {
+        val dao = VigilDatabase.get(context.applicationContext).vitalsDao()
+        HealthRepository(client, dao)
+    }
     val vm = viewModel<DashboardViewModel>(factory = DashboardViewModel.factory(repo))
     val state by vm.state.collectAsState()
 

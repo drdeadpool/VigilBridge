@@ -22,14 +22,17 @@ data class RawDashboard(
     val restingHeartRateBpm: Long?,
 )
 
-class HealthRepository(private val client: HealthConnectClient) {
+class HealthRepository(
+    private val client: HealthConnectClient,
+    private val dao: VitalsDao,
+) {
 
     suspend fun load(): RawDashboard {
         val now = Instant.now()
         val zone = ZoneId.systemDefault()
         val todayStart = LocalDate.now(zone).atStartOfDay(zone).toInstant()
 
-        return RawDashboard(
+        val raw = RawDashboard(
             stepsToday = aggregateSteps(
                 TimeRangeFilter.between(startTime = todayStart, endTime = now)
             ),
@@ -42,7 +45,28 @@ class HealthRepository(private val client: HealthConnectClient) {
             lastSleep = readLastSleep(now),
             restingHeartRateBpm = readRestingHR(now),
         )
+
+        try {
+            dao.insert(raw.toSnapshot(now))
+        } catch (e: Exception) {
+            Log.e(TAG, "Snapshot write failed: ${e.message}")
+        }
+
+        return raw
     }
+
+    private fun RawDashboard.toSnapshot(now: Instant) = VitalsSnapshot(
+        timestampMs = now.toEpochMilli(),
+        stepsToday = stepsToday,
+        steps7d = steps7d,
+        steps30d = steps30d,
+        sleepDurationMinutes = lastSleep?.let {
+            (it.endTime.epochSecond - it.startTime.epochSecond) / 60
+        },
+        sleepStartMs = lastSleep?.startTime?.toEpochMilli(),
+        sleepEndMs = lastSleep?.endTime?.toEpochMilli(),
+        restingHrBpm = restingHeartRateBpm,
+    )
 
     private suspend fun aggregateSteps(filter: TimeRangeFilter): Long? = try {
         client.aggregate(
