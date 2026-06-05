@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vigil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vigil}
+      POSTGRES_DB: ${POSTGRES_DB:-vigil}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vigil}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vigil}:${POSTGRES_PASSWORD:-vigil}@postgres:5432/${POSTGRES_DB:-vigil}
+      INGEST_API_KEY: ${INGEST_API_KEY:-changeme}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
