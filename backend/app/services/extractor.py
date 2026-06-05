@@ -209,4 +209,19 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
                 "source": source,
             })
 
+    # Sleep timing — timestamp IS the authoritative event time;
+    # value = hour-of-day decimal for circadian arithmetic (e.g. 23.5 = 11:30 PM)
+    for ms_key, metric_type in (("sleepStartMs", "sleep_start_hour"), ("sleepEndMs", "sleep_end_hour")):
+        ms_val = payload.get(ms_key)
+        event_ts = _parse_ts(ms_val)
+        if event_ts is not None:
+            hour_of_day = event_ts.hour + event_ts.minute / 60.0
+            results.append({
+                "metric_type": metric_type,
+                "value": round(hour_of_day, 4),
+                "unit": "hour",
+                "timestamp": event_ts,
+                "source": source,
+            })
+
     return results
