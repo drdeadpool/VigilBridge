@@ -15,6 +15,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.batman.vigilbridge.data.HealthRepository
 import com.batman.vigilbridge.data.VigilDatabase
+import com.batman.vigilbridge.network.VigilApiClient
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "VitalsSyncWorker"
@@ -53,8 +55,14 @@ class VitalsSyncWorker(
         return try {
             val dao = VigilDatabase.get(applicationContext).vitalsDao()
             val repo = HealthRepository(client, dao)
-            repo.load()
+            val timestamp = Instant.now()
+            val raw = repo.load()
             Log.d(TAG, "Background sync complete")
+
+            // Fire-and-forget: POST failure does not retry the worker.
+            // Data is already persisted to Room; backend receives it next cycle on failure.
+            VigilApiClient.postSnapshot(applicationContext, raw, timestamp)
+
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Background sync failed: ${e.message}")
