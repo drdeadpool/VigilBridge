@@ -1,5 +1,5 @@
 # VigilBridge — Bug Registry
-Last updated: 2026-06-02.
+Last updated: 2026-06-06.
 
 ---
 
@@ -223,7 +223,7 @@ val state by vm.state.collectAsStateWithLifecycle()
 ## BUG-006: Resting Heart Rate Not Verified on Device
 
 **Severity:** Medium — feature may silently return `—` always  
-**Status:** Open (testing required)  
+**Status:** Deferred to Phase 2  
 
 ### Symptom
 `RestingHeartRateRecord.BPM_AVG` aggregate was implemented in `HealthRepository` but never confirmed to return a non-null value on the S24 Ultra.
@@ -240,8 +240,48 @@ None. Feature was implemented at end of session without device verification.
 3. If empty: Samsung Health is not sharing this data type to Health Connect
 4. If present: check that VigilBridge has `READ_RESTING_HEART_RATE` permission granted
 
-### Fallback
-If `RestingHeartRateRecord` data is unavailable, compute approximate resting HR as the minimum recorded `HeartRate` value between 2 AM and 5 AM (typical deep sleep, lowest HR). Uses `HeartRateRecord` which Samsung Health does share to Health Connect.
+### Fallback (Phase 2 implementation)
+Compute approximate resting HR as minimum `HeartRateRecord.BPM` between 02:00–06:00 (deep sleep window, lowest HR). `HeartRateRecord` is shared by Samsung Health to Health Connect. Deferred from Phase 1: resting HR is a data quality issue, not a pipeline reliability issue. Phase 1 objective was proving end-to-end ingestion, not data completeness.
+
+---
+
+## INV-001: Samsung Health vs Health Connect Sleep Model Discrepancy
+
+**Severity:** High — trend analysis of sleep duration meaningless until resolved  
+**Status:** Open — must investigate before Phase 2 implementation  
+**Discovered:** 2026-06-06
+
+### Symptom
+Samsung Health and Vigil report different values for the same sleep session:
+
+| Source | Start | End | Duration |
+|---|---|---|---|
+| Samsung Health (ground truth) | 1:48 AM | 8:07 AM | Time in bed: 6h 19m / Actual sleep: 5h 42m |
+| Vigil (Health Connect) | 1:48 AM | 6:21 AM | 4h 33m |
+
+Vigil is short by ~1h 9m (actual sleep) to 1h 46m (time in bed). Start time matches — discrepancy is entirely in the end time.
+
+### Hypotheses
+
+1. **HC `SleepSessionRecord` contains multiple sub-sessions or stages.** Samsung Health may write sleep as a series of `SleepSessionRecord.Stage` entries. Vigil's current `readLastSleep()` may be selecting a sub-session (e.g., the first continuous sleep block ending at 6:21) rather than the full session ending at 8:07.
+
+2. **Session selection window cuts short.** Vigil uses `prev-18:00 → today-10:00` with minimum 180 min. If HC writes the session end as after 10:00 AM, it would be excluded.
+
+3. **Samsung Health's "actual sleep" excludes awake periods.** The 8:07 end is "time in bed"; Samsung Health deducts awake-in-bed time to compute 5h 42m "actual sleep". HC may store the actual sleep end (6:21) without the awake-in-bed tail. In this case Vigil's 6:21 end time may be correct but is missing the awake segment.
+
+4. **Multiple HC `SleepSessionRecord` objects for one night.** Samsung Health may write short-nap or awake-in-bed intervals as separate records. Vigil selects "most recent ≥180 min" and may miss a later record.
+
+### Investigation Steps (next session)
+1. In `VitalsSyncWorker.doWork()` or a test screen, read all `SleepSessionRecord` entries for the past 48h using `readRecords()` (not aggregate). Log each record's `startTime`, `endTime`, `stages` list.
+2. Look for a record ending at ~8:07 AM IST. If not present, look at `stages` within the 1:48–8:07 window.
+3. Compare `SleepSessionRecord.stages` breakdown to Samsung Health's stage graph.
+4. Determine: does "actual sleep" = sum of non-AWAKE stage durations? Does HC expose this or must Vigil compute it from stages?
+
+### Code Location
+`app/.../data/HealthRepository.kt` — `readLastSleep()` function.
+
+### Impact on Phase 2
+Cannot compute meaningful `sleep_duration_hours` baseline until the correct field is identified. All trend and circadian calculations downstream depend on this.
 
 ---
 

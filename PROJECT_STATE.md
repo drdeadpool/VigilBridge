@@ -1,5 +1,5 @@
 # VigilBridge — Project State
-Last updated: 2026-06-03. Written for zero-context continuation.
+Last updated: 2026-06-06. Written for zero-context continuation.
 
 ---
 
@@ -25,7 +25,7 @@ Last updated: 2026-06-03. Written for zero-context continuation.
 | UnavailableScreen | ✅ Working | Shown when HC SDK not present or needs update |
 | PermissionScreen | ✅ Working | Shown when permissions not granted |
 | Room database | ✅ Working | `VitalsSnapshot` written after every HC load |
-| Background sync | ✅ Working | WorkManager periodic 15-min job, no notification |
+| Background sync | ✅ Proven | WorkManager fires autonomously every 15 min when connected. `NetworkType.CONNECTED` constraint required. POST /ingest status=202 confirmed without user interaction. DB 40→56 verified. |
 | Clean build | ✅ Verified | `BUILD SUCCESSFUL` — 37 tasks |
 | Physical device | ✅ Confirmed | Samsung Galaxy S24 Ultra |
 
@@ -33,11 +33,14 @@ Last updated: 2026-06-03. Written for zero-context continuation.
 
 ## Broken Features
 
-### None currently blocking core flows.
+### None blocking data collection.
 
 ### Known open issues:
-- **BUG-003:** `UnavailableScreen` uses `1` and `3` literals instead of `HealthConnectClient` constants. Low risk; fix when touching that file.
-- **BUG-006:** Resting HR unverified on device — Samsung Health may not write `RestingHeartRateRecord` to HC. See investigation steps in BUGS.md.
+- **BUG-001:** onResume permission recheck missing. Fix before Phase 2 implementation.
+- **BUG-003:** `UnavailableScreen` magic literals. Low risk; fix when touching that file.
+- **BUG-004:** No error surface when HC queries fail. Fix before Phase 2.
+- **BUG-006:** Resting HR deferred to Phase 2. Will use `HeartRateRecord.BPM_MIN` (02:00–06:00) fallback.
+- **Sleep model discrepancy:** Samsung Health shows 5h 42m actual sleep; Vigil captured 4h 33m (same session). Must investigate `SleepSessionRecord` stages before Phase 2 trend computation.
 
 ---
 
@@ -76,11 +79,12 @@ VigilDatabase (data/VigilDatabase.kt)
 └── singleton Room DB → vitals_snapshots table
 
 VitalsSyncWorker (work/VitalsSyncWorker.kt)
-├── CoroutineWorker, 15-min periodic
+├── CoroutineWorker, 15-min periodic, requires NetworkType.CONNECTED
 ├── Checks HC SDK status
-├── Checks permissions still granted
+├── Checks permissions still granted (including READ_HEALTH_DATA_IN_BACKGROUND)
 ├── Creates HealthRepository(client, dao)
-└── Calls repo.load() → writes snapshot to Room
+├── Calls repo.load() → writes snapshot to Room
+└── VigilApiClient.postSnapshot() → POST /ingest (fire-and-forget; failure → success on next cycle)
 ```
 
 **Pattern:** MVVM. Manual DI (no Hilt). Repository handles all HC queries and Room writes.
@@ -89,7 +93,7 @@ VitalsSyncWorker (work/VitalsSyncWorker.kt)
 
 ## Build State
 
-- **Last successful build:** 2026-06-03
+- **Last successful build:** 2026-06-06
 - **Build command:** `JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew assembleDebug`
 - **Result:** `BUILD SUCCESSFUL in 34s — 37 tasks`
 - **Known warning:** `android.disallowKotlinSourceSets=false` — experimental flag required for KSP + AGP 9.x "built-in Kotlin" compatibility. Not a runtime issue.

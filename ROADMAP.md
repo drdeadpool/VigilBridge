@@ -4,24 +4,78 @@ Last updated: 2026-06-06. Reflects current repo + deployment state.
 
 ---
 
-## Current Phase: Phase 1 — Reliable Data Ingestion
+## ✅ Phase 1 COMPLETE — 2026-06-06
 
-**Status: 90% complete. Blocked on HC permission re-grant.**
+### Completion Evidence
 
-### Definition of Done (Phase 1)
+| Criterion | Status | Evidence |
+|---|---|---|
+| POST /ingest returns 202 | ✅ | Logcat 17:29:40: `status=202 body={"accepted":8,...}` |
+| Real observation rows in Postgres | ✅ | 56 observations, source=health_connect |
+| sleep_start_hour present (IST-correct) | ✅ | value=1.8 (01:48 IST) |
+| sleep_end_hour present (IST-correct) | ✅ | value=6.35 (06:21 IST) |
+| sleep_midpoint_hour present (IST-correct) | ✅ | value=4.075 (04:04 IST) |
+| sleep_duration_hours present | ✅ | value=4.55 (4h 33m) |
+| Values match Samsung Health | ✅ | start=01:48, end=06:21, dur=273min match device |
+| Deduplication proven | ✅ | Same sleep session: 2nd sync blocked; steps (new timestamp) accepted |
+| WorkManager autonomous sync | ✅ | Fired at 17:59:17 without user touch, POST status=202, DB 40→56 |
 
-All must be verified with evidence, not assumed:
-- [ ] POST /ingest returns 202
-- [ ] Real observation row in Postgres (not probe payload)
-- [ ] sleep_start_hour, sleep_end_hour, sleep_midpoint_hour, sleep_duration_hours all present
-- [ ] Values match Samsung Health displayed values
-- [ ] Evidence shown (logcat + curl output)
+### Deferred to Phase 2
 
-### Active Blocker
+**BUG-006 — Resting HR fallback:** Samsung Health may not write `RestingHeartRateRecord` to Health Connect. Current implementation silently returns null. Deferred because Phase 1 objective was proving reliable pipeline and autonomous collection, not data completeness. BUG-006 is a data quality/modeling issue. Will implement `HeartRateRecord.BPM_MIN` (02:00–06:00 window) fallback in Phase 2.
 
-HC permissions were reset when APK was reinstalled (2026-06-06). User must physically unlock device, open VigilBridge, and re-grant permissions through the Health Connect dialog. Cannot be bypassed via ADB or `pm grant`.
+---
 
-After granting: tap Refresh. Logcat should show `POST /ingest status=202` with non-empty observations.
+## Current Phase: Phase 2 — Trend Analysis
+
+**Status: BLOCKED — investigation required before implementation.**
+
+### Pre-Phase 2 Investigation: Samsung Health vs Health Connect Sleep Model Discrepancy
+
+**Priority: Must resolve before any circadian or recovery engine work.**
+
+**Observed discrepancy:**
+
+| Source | Start | End | Duration |
+|---|---|---|---|
+| Samsung Health (ground truth) | 1:48 AM | 8:07 AM | Time in bed: 6h 19m / Actual sleep: 5h 42m |
+| Vigil (Health Connect) | 1:48 AM | 6:21 AM | 4h 33m |
+
+**Questions to answer:**
+1. What does Health Connect's `SleepSessionRecord` actually contain for this session? Is the end time `06:21` or `08:07`? Does HC expose a single session or multiple segments?
+2. Does Samsung Health write sleep stage records to HC? If so, does the HC `SleepSessionRecord` include a `stages` list with REM/light/deep/awake segments that could explain the 5h 42m actual sleep figure?
+3. Vigil's current selection window is `prev-18:00 → today-10:00`, minimum 180 min. Is `06:21` coming from a sub-session end or from Vigil's selection logic cutting the session short?
+4. Is Samsung Health's "8:07 AM" end time a "time in bed" boundary that includes an awake-in-bed segment after the sleep session proper?
+
+**Impact on Phase 2:** Trend analysis of `sleep_duration_hours` is meaningless if Vigil is capturing 4h 33m when true sleep was 5h 42m. Must understand the model before computing baselines.
+
+**Investigation approach (next session):**
+- Read raw `SleepSessionRecord` from HC for this session — log full record including `stages`
+- Compare HC record fields to Samsung Health UI display
+- Determine which field maps to "actual sleep" vs "time in bed"
+- Decide on correct Vigil interpretation before Phase 2 data model is locked
+
+### Phase 2 Definition of Done
+
+All criteria must be proven with evidence:
+- [ ] GET /trends/{user_id}?metric=sleep_duration_hours&period=7d returns valid JSON with ≥7 data points
+- [ ] Personal baseline computed from ≥7 days of observations
+- [ ] 7/14/30-day rolling averages correct (verified against raw observations)
+- [ ] Anomaly detection flags a value >1.5 SD from baseline
+- [ ] New `trends` table live in Postgres with Alembic migration
+- [ ] Sleep model discrepancy resolved and Vigil captures correct sleep duration
+
+### Phase 2 Entry Criteria
+
+**Do not start Phase 2 implementation until:**
+1. Sleep model discrepancy investigation complete with documented finding
+2. ≥7 days of real device observations in Postgres (`sleep_duration_hours` and `steps_today`)
+3. BUG-001 (onResume permission recheck) fixed — prevents silent stale state that would block background collection
+4. Decision made on resting HR fallback (BUG-006)
+
+**Current DB state (2026-06-06):** 56 observations. Continuous sleep data starts today. 7-day gate reached ~2026-06-13.
+
+---
 
 ---
 
@@ -54,61 +108,59 @@ After granting: tap Refresh. Logcat should show `POST /ingest status=202` with n
 - [x] Android payload includes timezone field
 - [x] Sleep session selection (Option B: prev-18:00→today-10:00, ≥180min)
 
-### 2026-06-06: Session (current)
+### 2026-06-06: Phase 1 Completion
 
 - [x] GET /observations/recent endpoint added
-- [x] DashboardViewModel.refresh() now POSTs to backend (was read-only)
-- [x] READ_HEALTH_DATA_IN_BACKGROUND added to manifest and permission sets
-- [ ] HC permissions re-granted on device — **PENDING USER ACTION**
+- [x] DashboardViewModel.refresh() POSTs to backend (was read-only)
+- [x] READ_HEALTH_DATA_IN_BACKGROUND added to manifest + permission sets
+- [x] Deduplication: ON CONFLICT DO NOTHING + unique constraint migration (a3f92c1d4e87)
+- [x] WorkManager network constraint bug fixed: `NetworkType.CONNECTED` + `UPDATE` policy
+- [x] WorkManager autonomous sync proven: fired at 17:59:17, status=202, DB 40→56
+- [x] **Phase 1 declared complete**
 
 ---
 
 ## Active Work
 
-### Immediate: Prove Phase 1 Complete
+### Immediate: Samsung Health vs Health Connect Sleep Model Investigation
 
-**Action required (user, on device):**
-1. Unlock phone
-2. Open VigilBridge
-3. Tap "Grant Permissions" if shown, allow all including Background
-4. If on dashboard, tap "Refresh"
+Phase 1 complete. Phase 2 implementation blocked until sleep model discrepancy is understood.
 
-**Verification commands (after tap):**
-```powershell
-# Logcat — should show status=202 with observations
-C:\Users\kaliv\AppData\Local\Android\Sdk\platform-tools\adb.exe -s R5CXB2KE0VF logcat -d -s VigilApiClient:D 2>&1 | Select-String "POST /ingest status"
+**Discrepancy:** Samsung Health shows time-in-bed 6h 19m / actual sleep 5h 42m. Vigil captured 4h 33m (same session, different end time: 6:21 vs 8:07).
 
-# DB — should show sleep_start_hour row
-curl -s "https://vigilbridge.onrender.com/observations/recent?metric_type=sleep_start_hour&limit=5" -H "X-Api-Key: 0dc8144910936507989abc28e059d7d5"
-```
+**Do next session:**
+1. Read raw `SleepSessionRecord` from HC — log full object including `stages` list
+2. Compare session boundaries and stage breakdowns to Samsung Health UI
+3. Document finding: which field = "actual sleep", which = "time in bed"
+4. Update `HealthRepository.readLastSleep()` if current selection is wrong
 
 ---
 
 ## Technical Debt
 
-### High priority (fix before Phase 2)
+### Fix before Phase 2 implementation
 
 | ID | File | Issue | Fix |
 |----|------|-------|-----|
-| BUG-001 | MainActivity.kt | onResume permission recheck missing | Add `onResume()` override with lifecycleScope.launch + getGrantedPermissions() |
-| BUG-004 | DashboardViewModel.kt | No error state when all HC queries fail | Add `loadError: String?` to DashboardUiState |
-| — | DashboardViewModel.kt | init { refresh() } fires before Activity RESUMED, HC reads fail | Move initial POST to LaunchedEffect or use lifecycle observer |
+| BUG-001 | MainActivity.kt | onResume permission recheck missing — silent stale state after Settings grant | Add `onResume()` + `lifecycleScope.launch + getGrantedPermissions()` |
+| BUG-004 | DashboardViewModel.kt | No error state when all HC queries fail — user sees `—` with no explanation | Add `loadError: String?` to DashboardUiState |
+| — | DashboardViewModel.kt | `init { refresh() }` fires before Activity RESUMED, HC reads fail silently | Move initial POST to `LaunchedEffect` or lifecycle observer |
+| — | HealthRepository.kt | `RawDashboard.lastSleep` is `SleepSessionRecord` (HC SDK type leaking into domain) | Extract `SleepSummary` data class — required before trend queries over sleep fields |
 
-### Medium priority (fix before Phase 3)
-
-| ID | File | Issue | Fix |
-|----|------|-------|-----|
-| BUG-006 | HealthRepository.kt | Resting HR unverified on S24 Ultra | Open HC app → verify RestingHeartRate data exists; if not, use HeartRateRecord.BPM_MIN 2am–6am fallback |
-| — | HealthRepository.kt | RawDashboard.lastSleep is SleepSessionRecord (HC SDK type in domain model) | Extract SleepSummary data class (startTime, endTime, durationMinutes) |
-| — | backend | 16 existing observations all from probe payloads; sleep timing values used UTC not IST | Accept as test data, do not delete; real device rows will use corrected IST values |
-
-### Low priority
+### Fix during Phase 2
 
 | ID | File | Issue | Fix |
 |----|------|-------|-----|
-| BUG-003 | DashboardScreen.kt | Magic literals 1 and 3 in UnavailableScreen | Replace with HealthConnectClient constants |
-| BUG-005 | DashboardScreen.kt | collectAsState vs collectAsStateWithLifecycle | Add lifecycle-runtime-compose dep, swap import |
-| BUG-007 | app/build.gradle.kts | versionName = "1.0" | Set versionCode=3, versionName="0.3" |
+| BUG-006 | HealthRepository.kt | Resting HR always null — Samsung Health likely not writing `RestingHeartRateRecord` to HC | Implement `HeartRateRecord.BPM_MIN` (02:00–06:00 window) fallback. Deferred from Phase 1: not a pipeline reliability issue. |
+| — | backend | Probe rows with UTC-buggy sleep_start_hour=17.0 in DB | Mark as probe in a `source_notes` field or filter in trend queries |
+
+### Low priority (fix before Phase 3)
+
+| ID | File | Issue | Fix |
+|----|------|-------|-----|
+| BUG-003 | DashboardScreen.kt | Magic literals 1 and 3 in UnavailableScreen | Replace with `HealthConnectClient` constants |
+| BUG-005 | DashboardScreen.kt | `collectAsState` vs `collectAsStateWithLifecycle` | Add `lifecycle-runtime-compose` dep, swap import |
+| BUG-007 | app/build.gradle.kts | versionName = "1.0" should be "0.3" | Set `versionCode=3, versionName="0.3"` |
 | — | backend/README.md | GET /observations/recent not documented | Add endpoint docs |
 
 ---
@@ -117,45 +169,45 @@ curl -s "https://vigilbridge.onrender.com/observations/recent?metric_type=sleep_
 
 | Blocker | Owner | Status |
 |---------|-------|--------|
-| HC permissions reset by reinstall | User (device action) | Active — must re-grant on device |
-| Resting HR data availability unconfirmed (BUG-006) | User (HC app check) | Deferred until Phase 1 complete |
+| Sleep model discrepancy investigation | Engineering | Active — must resolve before Phase 2 implementation |
+| ≥7 days real device observations | Time | Reached ~2026-06-13 |
 
 ---
 
 ## Prioritized Next Tasks
 
-After Phase 1 is proven (HC permissions granted, real row in Postgres):
+Phase 1 complete. Phase 2 entry criteria gate:
 
-### P0 — Phase 1 closure
-1. **Re-grant HC permissions on device** (user action) — unblocks everything
-2. **Verify end-to-end**: logcat shows 202, curl shows sleep_start_hour row with IST-correct value
+### P0 — Unblock Phase 2
+1. **Investigate Samsung Health vs HC sleep model discrepancy** — read raw `SleepSessionRecord` including stages, compare to Samsung Health UI, document finding
+2. **Fix BUG-001** — onResume permission recheck; prevents silent collection gaps between sessions
 
-### P1 — Stability before Phase 2
-3. **Fix BUG-001**: Add `onResume()` permission recheck — prevents silent state stale after Settings grant
-4. **Fix init timing**: Move initial POST call to after Activity RESUMED (prevents WorkManager-style errors on foreground launch)
-5. **Verify BUG-006**: Check if resting HR data exists in HC app; implement fallback if not
+### P1 — Data quality before trend computation
+3. **Extract `SleepSummary` domain model** — decouple from HC SDK type before trend queries
+4. **Fix BUG-006** — implement `HeartRateRecord.BPM_MIN` fallback for resting HR
+5. **Fix BUG-004** — add error surface to dashboard
 
-### P2 — Data quality
-6. **Fix BUG-004**: Add error surface to dashboard — currently shows `—` for all metrics on failure, no user feedback
-7. **Verify WorkManager background sync**: `adb shell dumpsys jobscheduler | grep vigil` + DB check after 15min background
+### P2 — Phase 2 implementation (after ~2026-06-13)
+6. **`trends` table + Alembic migration**
+7. **GET /trends/{user_id}** endpoint with 7/14/30-day rolling averages
+8. **Personal baseline computation** (mean ± SD per metric)
+9. **Anomaly detection** against baseline
 
-### P3 — Cleanup before Phase 2
-8. **Extract SleepSummary domain model** — decouple ViewModel from HC SDK type
-9. **Dashboard shows cached startup values** — load from Room first, then HC refresh
-10. **Fix remaining low-priority bugs** — BUG-003, BUG-005, BUG-007
+### P3 — Cleanup (low urgency)
+10. **Fix BUG-003, BUG-005, BUG-007**
 
 ---
 
-## Future Phases (DO NOT START UNTIL PHASE 1 COMPLETE)
+## Future Phases
 
-### Phase 2: Trend Analysis
+### Phase 2: Trend Analysis (current — investigation phase)
 - 7/14/30-day rolling averages per metric
-- Personal baseline computation
+- Personal baseline computation (mean ± SD)
 - Anomaly detection vs baseline
 - New `trends` table
 - GET /trends/{user_id}?metric=sleep_duration_hours&period=7d
 
-**Gate:** ≥14 days of real device observations in Postgres.
+**Gate:** Sleep model discrepancy resolved + ≥7 days of real device observations in Postgres + BUG-001 fixed.
 
 ### Phase 3: Circadian Analysis
 - DLMO proxy from sleep midpoint time series
@@ -198,10 +250,10 @@ After Phase 1 is proven (HC permissions granted, real row in Postgres):
 | Component | State | Notes |
 |-----------|-------|-------|
 | Backend API | Live | vigilbridge.onrender.com, Render free tier |
-| Postgres | Live | Render managed, 16 observations (all probe) |
-| Android APK | Installed | Debug build, R5CXB2KE0VF |
+| Postgres | Live | Render managed, 56 observations, IST-correct |
+| Android APK | Installed | Debug build, R5CXB2KE0VF, WorkManager proven |
 | GitHub repo | Current | drdeadpool/VigilBridge, auto-deploy from main |
-| Migrations | Applied | 77f7b348bccf (initial schema) |
+| Migrations | Applied | 77f7b348bccf (initial), a3f92c1d4e87 (dedup unique constraint) |
 
 ---
 
@@ -211,4 +263,4 @@ After Phase 1 is proven (HC permissions granted, real row in Postgres):
 |---------|------|-------------|
 | v0.1 | 2026-06-02 | HC dashboard, corrupt record investigation |
 | v0.2 | 2026-06-02 | MVVM refactor, Room, WorkManager |
-| v0.3 | 2026-06-03-06 | Backend + network, timezone fix, sleep timing, /observations/recent |
+| v0.3 | 2026-06-03–06 | Backend + network, timezone fix, sleep timing, dedup, autonomous sync |

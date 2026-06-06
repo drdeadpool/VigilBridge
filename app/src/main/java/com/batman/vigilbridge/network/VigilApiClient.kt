@@ -45,10 +45,11 @@ object VigilApiClient {
             raw.steps7d?.let { put("steps7d", it) }
             raw.steps30d?.let { put("steps30d", it) }
             raw.lastSleep?.let { sleep ->
-                put("sleepDurationMinutes",
-                    (sleep.endTime.epochSecond - sleep.startTime.epochSecond) / 60)
                 put("sleepStartMs", sleep.startTime.toEpochMilli())
                 put("sleepEndMs", sleep.endTime.toEpochMilli())
+                put("actualSleepMinutes", sleep.actualSleepMinutes)
+                put("timeInBedMinutes", sleep.timeInBedMinutes)
+                put("sleepSessionsCount", sleep.sessionCount)
             }
             raw.restingHeartRateBpm?.let { put("restingHrBpm", it) }
         }

@@ -18,7 +18,7 @@ data class RawDashboard(
     val stepsToday: Long?,
     val steps7d: Long?,
     val steps30d: Long?,
-    val lastSleep: SleepSessionRecord?,
+    val lastSleep: SleepSummary?,
     val restingHeartRateBpm: Long?,
 )
 
@@ -60,9 +60,7 @@ class HealthRepository(
         stepsToday = stepsToday,
         steps7d = steps7d,
         steps30d = steps30d,
-        sleepDurationMinutes = lastSleep?.let {
-            (it.endTime.epochSecond - it.startTime.epochSecond) / 60
-        },
+        sleepDurationMinutes = lastSleep?.actualSleepMinutes,
         sleepStartMs = lastSleep?.startTime?.toEpochMilli(),
         sleepEndMs = lastSleep?.endTime?.toEpochMilli(),
         restingHrBpm = restingHeartRateBpm,
@@ -80,18 +78,39 @@ class HealthRepository(
         null
     }
 
-    private suspend fun readLastSleep(now: Instant): SleepSessionRecord? = try {
-        client.readRecords(
+    private suspend fun readLastSleep(now: Instant): SleepSummary? = try {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val windowStart = today.minusDays(1).atTime(18, 0).atZone(zone).toInstant()
+        val windowEnd   = today.atTime(10, 0).atZone(zone).toInstant()
+
+        val sessions = client.readRecords(
             ReadRecordsRequest(
                 recordType = SleepSessionRecord::class,
                 timeRangeFilter = TimeRangeFilter.between(
-                    startTime = now.minusSeconds(48L * 3_600),
-                    endTime = now,
+                    startTime = windowStart,
+                    endTime   = windowEnd,
                 ),
-                ascendingOrder = false,
-                pageSize = 1,
+                ascendingOrder = true,
+                pageSize = 20,
             )
-        ).records.firstOrNull()
+        ).records
+
+        Log.d(TAG, "Sleep sessions in window [${windowStart}→${windowEnd}]: ${sessions.size}")
+        sessions.forEach { s ->
+            val mins = (s.endTime.epochSecond - s.startTime.epochSecond) / 60
+            Log.d(TAG, "  session: start=${s.startTime} end=${s.endTime} total=${mins}min stages=${s.stages.size}")
+        }
+
+        val summary = mergeSleepSessions(sessions.map { it.toRaw() })
+
+        if (summary != null) {
+            Log.d(TAG, "Merged sleep: sessions=${summary.sessionCount} start=${summary.startTime} end=${summary.endTime} actual=${summary.actualSleepMinutes}min timeInBed=${summary.timeInBedMinutes}min")
+        } else {
+            Log.d(TAG, "No qualifying sleep in window")
+        }
+
+        summary
     } catch (e: Exception) {
         Log.e(TAG, "Sleep read failed: ${e.message}")
         null
@@ -112,3 +131,15 @@ class HealthRepository(
         null
     }
 }
+
+private fun SleepSessionRecord.toRaw() = RawSleepSession(
+    startSeconds = startTime.epochSecond,
+    endSeconds   = endTime.epochSecond,
+    stages = stages.map { stage ->
+        RawSleepStage(
+            startSeconds = stage.startTime.epochSecond,
+            endSeconds   = stage.endTime.epochSecond,
+            stageType    = stage.stage,
+        )
+    },
+)

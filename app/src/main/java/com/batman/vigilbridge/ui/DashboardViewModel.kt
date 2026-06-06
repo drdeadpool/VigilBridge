@@ -56,8 +56,7 @@ class DashboardViewModel(
         val syncFmt = DateTimeFormatter.ofPattern("MMM d, h:mm a").withZone(zone)
 
         val durationStr = lastSleep?.let {
-            val mins = (it.endTime.epochSecond - it.startTime.epochSecond) / 60
-            "${mins / 60}h ${mins % 60}m"
+            "${it.actualSleepMinutes / 60}h ${it.actualSleepMinutes % 60}m"
         } ?: "—"
 
         return DashboardUiState(

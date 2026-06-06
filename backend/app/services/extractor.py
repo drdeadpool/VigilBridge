@@ -184,22 +184,27 @@ def _extract_respiratory_rate(payload: dict, source: str) -> list[dict]:
 
 def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
     """
-    VigilBridge VitalsSnapshot format — matches current Room entity.
-    Converts one snapshot into multiple observations.
+    VigilBridge VitalsSnapshot format. Converts one snapshot into multiple observations.
 
-    Sleep timing metrics are computed in device-local time using the
-    IANA timezone id sent in payload["timezone"]. Falls back to UTC
-    if the field is absent or invalid.
+    Sleep timing metrics use device-local time via the IANA timezone in payload["timezone"].
+    Falls back to UTC if absent or invalid.
+
+    Sleep model (INV-001 corrected):
+    - sleep_start_hour / sleep_end_hour: boundaries of merged sleep block
+    - sleep_duration_hours: stage-based actual sleep (LIGHT+DEEP+REM, excludes AWAKE)
+      from payload["actualSleepMinutes"]; falls back to end-start if absent (legacy)
+    - time_in_bed_hours: total time from first session start to last session end
+    - sleep_sessions_count: number of HC SleepSessionRecords merged
+    - sleep_midpoint_hour: DEPRECATED — not emitted. Midpoint model undecided.
     """
     results = []
     ts_ms = payload.get("timestampMs") or payload.get("timestamp_ms")
     ts = _parse_ts(ts_ms) or _now()
 
     field_map = [
-        ("stepsToday", "steps_today", "steps"),
-        ("steps7d", "steps_7d", "steps"),
-        ("steps30d", "steps_30d", "steps"),
-        ("sleepDurationMinutes", "sleep_duration_minutes", "min"),
+        ("stepsToday",   "steps_today",   "steps"),
+        ("steps7d",      "steps_7d",      "steps"),
+        ("steps30d",     "steps_30d",     "steps"),
         ("restingHrBpm", "resting_hr_bpm", "bpm"),
     ]
 
@@ -215,7 +220,7 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
             })
 
     sleep_start_ms = payload.get("sleepStartMs")
-    sleep_end_ms = payload.get("sleepEndMs")
+    sleep_end_ms   = payload.get("sleepEndMs")
 
     if sleep_start_ms is not None or sleep_end_ms is not None:
         tz_str = payload.get("timezone") or "UTC"
@@ -229,7 +234,7 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
             return round(local.hour + local.minute / 60.0 + local.second / 3600.0, 4)
 
         start_utc = _parse_ts(sleep_start_ms) if sleep_start_ms is not None else None
-        end_utc = _parse_ts(sleep_end_ms) if sleep_end_ms is not None else None
+        end_utc   = _parse_ts(sleep_end_ms)   if sleep_end_ms   is not None else None
 
         if start_utc is not None:
             results.append({
@@ -249,24 +254,43 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
                 "source": source,
             })
 
-        if start_utc is not None and end_utc is not None:
-            mid_epoch_s = (sleep_start_ms + sleep_end_ms) / 2000.0
-            mid_utc = datetime.fromtimestamp(mid_epoch_s, tz=timezone.utc)
-            results.append({
-                "metric_type": "sleep_midpoint_hour",
-                "value": _local_hour(mid_utc),
-                "unit": "hour",
-                "timestamp": mid_utc,
-                "source": source,
-            })
+        if start_utc is not None:
+            # Prefer stage-based actual sleep from Android; fall back to boundary diff (legacy)
+            actual_min = payload.get("actualSleepMinutes")
+            if actual_min is not None:
+                duration_hours = round(float(actual_min) / 60.0, 4)
+            elif end_utc is not None:
+                duration_hours = round((end_utc - start_utc).total_seconds() / 3600.0, 4)
+            else:
+                duration_hours = None
 
-            duration_hours = round((end_utc - start_utc).total_seconds() / 3600.0, 4)
-            results.append({
-                "metric_type": "sleep_duration_hours",
-                "value": duration_hours,
-                "unit": "hours",
-                "timestamp": start_utc,
-                "source": source,
-            })
+            if duration_hours is not None:
+                results.append({
+                    "metric_type": "sleep_duration_hours",
+                    "value": duration_hours,
+                    "unit": "hours",
+                    "timestamp": start_utc,
+                    "source": source,
+                })
+
+            time_in_bed_min = payload.get("timeInBedMinutes")
+            if time_in_bed_min is not None:
+                results.append({
+                    "metric_type": "time_in_bed_hours",
+                    "value": round(float(time_in_bed_min) / 60.0, 4),
+                    "unit": "hours",
+                    "timestamp": start_utc,
+                    "source": source,
+                })
+
+            sessions_count = payload.get("sleepSessionsCount")
+            if sessions_count is not None:
+                results.append({
+                    "metric_type": "sleep_sessions_count",
+                    "value": float(sessions_count),
+                    "unit": "count",
+                    "timestamp": start_utc,
+                    "source": source,
+                })
 
     return results

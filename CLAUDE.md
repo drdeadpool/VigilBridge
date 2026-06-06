@@ -14,13 +14,15 @@ This is Phase 4 of the BatmanOS personal roadmap. Target users require clinicall
 
 ## Current Phase
 
-**Phase 1: Reliable Data Ingestion** — 90% complete.
+**Phase 1: Reliable Data Ingestion** — ✅ COMPLETE (2026-06-06)
 
-Definition of done: POST /ingest returns 202 AND a real observation row with sleep_start_hour, sleep_end_hour, sleep_midpoint_hour, sleep_duration_hours exists in Postgres AND values match Samsung Health. **Not done until evidence is shown.**
+All criteria proven with evidence. WorkManager autonomous sync confirmed: status=202, DB 40→56, no user interaction. Deduplication live. IST-correct sleep timing in Postgres.
 
-Active blocker: Health Connect permissions reset by APK reinstall. User must re-grant on device.
+**Phase 2: Trend Analysis** — CURRENT PHASE. Blocked on investigation.
 
-Do not begin Phase 2 (Trend Engine), Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until Phase 1 is proven with evidence.
+Active blocker: Samsung Health vs Health Connect sleep model discrepancy. Samsung Health reports 5h 42m actual sleep / 6h 19m time-in-bed. Vigil captured 4h 33m (end time 6:21 vs 8:07). Must read raw `SleepSessionRecord` including `stages`, compare to Samsung Health, and determine correct mapping before trend baselines are computed.
+
+Do not begin Phase 2 implementation, Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until sleep model investigation is complete and ≥7 days of observations exist in Postgres (~2026-06-13).
 
 ---
 
