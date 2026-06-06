@@ -53,12 +53,12 @@ All criteria must be proven with evidence:
 ### Phase 2 Entry Criteria
 
 **Do not start Phase 2 implementation until:**
-1. Sleep model discrepancy investigation complete with documented finding
-2. ≥7 days of real device observations in Postgres (`sleep_duration_hours` and `steps_today`)
-3. BUG-001 (onResume permission recheck) fixed — prevents silent stale state that would block background collection
-4. Decision made on resting HR fallback (BUG-006)
+1. ✅ Sleep model investigation complete — INV-001 resolved 2026-06-06
+2. ≥7 days of real device observations in Postgres — gate ~2026-06-13
+3. ✅ BUG-001 fixed — 2026-06-06 (onResume permission recheck)
+4. BUG-006 decision made (resting HR fallback)
 
-**Current DB state (2026-06-06):** 56 observations. Continuous sleep data starts today. 7-day gate reached ~2026-06-13.
+**Current DB state (2026-06-06):** ~70 observations. Sleep model correct. 7-day gate ~2026-06-13.
 
 ---
 
@@ -161,8 +161,8 @@ INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2
 Phase 1 complete. Phase 2 entry criteria gate:
 
 ### P0 — Unblock Phase 2
-1. ~~**Investigate Samsung Health vs HC sleep model discrepancy**~~ — **DONE (INV-001, 2026-06-06)**
-2. **Fix BUG-001** — onResume permission recheck; prevents silent collection gaps between sessions
+1. ✅ ~~**Investigate Samsung Health vs HC sleep model discrepancy**~~ — DONE (INV-001, 2026-06-06)
+2. ✅ ~~**Fix BUG-001**~~ — DONE (2026-06-06)
 
 ### P1 — Data quality before trend computation
 3. **Extract `SleepSummary` domain model** — decouple from HC SDK type before trend queries
