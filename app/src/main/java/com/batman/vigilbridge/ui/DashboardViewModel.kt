@@ -1,5 +1,6 @@
 package com.batman.vigilbridge.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.batman.vigilbridge.data.HealthRepository
 import com.batman.vigilbridge.data.RawDashboard
+import com.batman.vigilbridge.network.VigilApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +30,10 @@ data class DashboardUiState(
     val lastSynced: String = "",
 )
 
-class DashboardViewModel(private val repo: HealthRepository) : ViewModel() {
+class DashboardViewModel(
+    private val repo: HealthRepository,
+    private val context: Context,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())
     val state: StateFlow<DashboardUiState> = _state.asStateFlow()
@@ -38,7 +43,9 @@ class DashboardViewModel(private val repo: HealthRepository) : ViewModel() {
     fun refresh() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
-            _state.value = repo.load().toUiState()
+            val raw = repo.load()
+            _state.value = raw.toUiState()
+            VigilApiClient.postSnapshot(context, raw, Instant.now())
         }
     }
 
@@ -67,8 +74,8 @@ class DashboardViewModel(private val repo: HealthRepository) : ViewModel() {
     }
 
     companion object {
-        fun factory(repo: HealthRepository): ViewModelProvider.Factory = viewModelFactory {
-            initializer { DashboardViewModel(repo) }
+        fun factory(repo: HealthRepository, context: Context): ViewModelProvider.Factory = viewModelFactory {
+            initializer { DashboardViewModel(repo, context.applicationContext) }
         }
     }
 }

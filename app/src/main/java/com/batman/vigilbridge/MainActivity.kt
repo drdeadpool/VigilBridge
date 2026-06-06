@@ -25,6 +25,7 @@ private val PERMISSIONS = setOf(
     HealthPermission.getReadPermission(StepsRecord::class),
     HealthPermission.getReadPermission(SleepSessionRecord::class),
     HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+    HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND,
 )
 
 class MainActivity : ComponentActivity() {

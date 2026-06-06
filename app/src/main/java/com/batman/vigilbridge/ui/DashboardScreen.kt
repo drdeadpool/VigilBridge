@@ -47,7 +47,7 @@ fun VigilScreen(
         val dao = VigilDatabase.get(context.applicationContext).vitalsDao()
         HealthRepository(client, dao)
     }
-    val vm = viewModel<DashboardViewModel>(factory = DashboardViewModel.factory(repo))
+    val vm = viewModel<DashboardViewModel>(factory = DashboardViewModel.factory(repo, context))
     val state by vm.state.collectAsState()
 
     Dashboard(state = state, onRefresh = vm::refresh)
