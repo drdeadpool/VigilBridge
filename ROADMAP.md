@@ -13,10 +13,10 @@ Last updated: 2026-06-06. Reflects current repo + deployment state.
 | POST /ingest returns 202 | ✅ | Logcat 17:29:40: `status=202 body={"accepted":8,...}` |
 | Real observation rows in Postgres | ✅ | 56 observations, source=health_connect |
 | sleep_start_hour present (IST-correct) | ✅ | value=1.8 (01:48 IST) |
-| sleep_end_hour present (IST-correct) | ✅ | value=6.35 (06:21 IST) |
-| sleep_midpoint_hour present (IST-correct) | ✅ | value=4.075 (04:04 IST) |
-| sleep_duration_hours present | ✅ | value=4.55 (4h 33m) |
-| Values match Samsung Health | ✅ | start=01:48, end=06:21, dur=273min match device |
+| sleep_end_hour present (IST-correct) | ✅ | value=6.35 at Phase 1; corrected to 8.1167 (08:07 IST) by INV-001 |
+| sleep_midpoint_hour present (IST-correct) | ✅ | value=4.075 — deprecated by INV-001 (midpoint model rejected) |
+| sleep_duration_hours present | ✅ | value=4.55 at Phase 1; corrected to 5.70 by INV-001 from next night |
+| Values match Samsung Health | ✅ | Post-INV-001: start=01:48, end=08:07, actual=5h42m, tib=6h19m |
 | Deduplication proven | ✅ | Same sleep session: 2nd sync blocked; steps (new timestamp) accepted |
 | WorkManager autonomous sync | ✅ | Fired at 17:59:17 without user touch, POST status=202, DB 40→56 |
 
@@ -28,32 +28,17 @@ Last updated: 2026-06-06. Reflects current repo + deployment state.
 
 ## Current Phase: Phase 2 — Trend Analysis
 
-**Status: BLOCKED — investigation required before implementation.**
+**Status: BLOCKED on data accumulation.**
 
-### Pre-Phase 2 Investigation: Samsung Health vs Health Connect Sleep Model Discrepancy
+### INV-001 — RESOLVED 2026-06-06
 
-**Priority: Must resolve before any circadian or recovery engine work.**
+Samsung Health splits one night's sleep into two `SleepSessionRecord` objects separated by short gaps (observed: 10-min gap at 06:21→06:31). Old model silently dropped session 2 (96 min) due to ≥180-min minimum filter.
 
-**Observed discrepancy:**
+**Fix applied:** `SleepMerger.kt` groups sessions within 30-min gaps, computes actual sleep from stage durations (LIGHT+DEEP+REM), excludes AWAKE/OUT_OF_BED. Backend extractor updated: adds `time_in_bed_hours`, `sleep_sessions_count`; `sleep_duration_hours` uses `actualSleepMinutes`.
 
-| Source | Start | End | Duration |
-|---|---|---|---|
-| Samsung Health (ground truth) | 1:48 AM | 8:07 AM | Time in bed: 6h 19m / Actual sleep: 5h 42m |
-| Vigil (Health Connect) | 1:48 AM | 6:21 AM | 4h 33m |
+**Verification (Android logcat):** `Merged sleep: sessions=2 actual=342min timeInBed=379min` — exact match to Samsung Health (5h42m actual, 6h19m in bed).
 
-**Questions to answer:**
-1. What does Health Connect's `SleepSessionRecord` actually contain for this session? Is the end time `06:21` or `08:07`? Does HC expose a single session or multiple segments?
-2. Does Samsung Health write sleep stage records to HC? If so, does the HC `SleepSessionRecord` include a `stages` list with REM/light/deep/awake segments that could explain the 5h 42m actual sleep figure?
-3. Vigil's current selection window is `prev-18:00 → today-10:00`, minimum 180 min. Is `06:21` coming from a sub-session end or from Vigil's selection logic cutting the session short?
-4. Is Samsung Health's "8:07 AM" end time a "time in bed" boundary that includes an awake-in-bed segment after the sleep session proper?
-
-**Impact on Phase 2:** Trend analysis of `sleep_duration_hours` is meaningless if Vigil is capturing 4h 33m when true sleep was 5h 42m. Must understand the model before computing baselines.
-
-**Investigation approach (next session):**
-- Read raw `SleepSessionRecord` from HC for this session — log full record including `stages`
-- Compare HC record fields to Samsung Health UI display
-- Determine which field maps to "actual sleep" vs "time in bed"
-- Decide on correct Vigil interpretation before Phase 2 data model is locked
+**New metrics in Postgres:** `time_in_bed_hours=6.3167`, `sleep_sessions_count=2.0`, `sleep_end_hour=8.1167`. Note: `sleep_duration_hours` for June 5-6 night is stuck at 4.55 (old row, `ON CONFLICT DO NOTHING`); correct 5.70 value appears from June 6-7 night onward.
 
 ### Phase 2 Definition of Done
 
@@ -122,17 +107,14 @@ All criteria must be proven with evidence:
 
 ## Active Work
 
-### Immediate: Samsung Health vs Health Connect Sleep Model Investigation
+### Wait for data accumulation gate (~2026-06-13)
 
-Phase 1 complete. Phase 2 implementation blocked until sleep model discrepancy is understood.
+INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2 now blocked only on accumulating ≥7 days of real observations.
 
-**Discrepancy:** Samsung Health shows time-in-bed 6h 19m / actual sleep 5h 42m. Vigil captured 4h 33m (same session, different end time: 6:21 vs 8:07).
-
-**Do next session:**
-1. Read raw `SleepSessionRecord` from HC — log full object including `stages` list
-2. Compare session boundaries and stage breakdowns to Samsung Health UI
-3. Document finding: which field = "actual sleep", which = "time in bed"
-4. Update `HealthRepository.readLastSleep()` if current selection is wrong
+**While waiting — fix before Phase 2 starts:**
+1. **BUG-001** — onResume permission recheck (prevents silent collection gaps)
+2. **BUG-004** — error surface when HC queries fail
+3. **BUG-006** — verify resting HR or implement fallback
 
 ---
 
@@ -169,7 +151,7 @@ Phase 1 complete. Phase 2 implementation blocked until sleep model discrepancy i
 
 | Blocker | Owner | Status |
 |---------|-------|--------|
-| Sleep model discrepancy investigation | Engineering | Active — must resolve before Phase 2 implementation |
+| Sleep model discrepancy (INV-001) | Engineering | **RESOLVED 2026-06-06** |
 | ≥7 days real device observations | Time | Reached ~2026-06-13 |
 
 ---
@@ -179,7 +161,7 @@ Phase 1 complete. Phase 2 implementation blocked until sleep model discrepancy i
 Phase 1 complete. Phase 2 entry criteria gate:
 
 ### P0 — Unblock Phase 2
-1. **Investigate Samsung Health vs HC sleep model discrepancy** — read raw `SleepSessionRecord` including stages, compare to Samsung Health UI, document finding
+1. ~~**Investigate Samsung Health vs HC sleep model discrepancy**~~ — **DONE (INV-001, 2026-06-06)**
 2. **Fix BUG-001** — onResume permission recheck; prevents silent collection gaps between sessions
 
 ### P1 — Data quality before trend computation

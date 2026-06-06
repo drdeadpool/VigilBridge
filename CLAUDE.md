@@ -18,11 +18,11 @@ This is Phase 4 of the BatmanOS personal roadmap. Target users require clinicall
 
 All criteria proven with evidence. WorkManager autonomous sync confirmed: status=202, DB 40→56, no user interaction. Deduplication live. IST-correct sleep timing in Postgres.
 
-**Phase 2: Trend Analysis** — CURRENT PHASE. Blocked on investigation.
+**Phase 2: Trend Analysis** — CURRENT PHASE. Blocked on data accumulation.
 
-Active blocker: Samsung Health vs Health Connect sleep model discrepancy. Samsung Health reports 5h 42m actual sleep / 6h 19m time-in-bed. Vigil captured 4h 33m (end time 6:21 vs 8:07). Must read raw `SleepSessionRecord` including `stages`, compare to Samsung Health, and determine correct mapping before trend baselines are computed.
+INV-001 resolved 2026-06-06: Samsung Health splits one night into two `SleepSessionRecord` objects with 10-min gap. `SleepMerger.kt` now merges sessions within 30-min gaps and computes actual sleep from stage durations. New metrics: `time_in_bed_hours`, `sleep_sessions_count`. Verified: actual=342min (5h42m), timeInBed=379min (6h19m) — exact Samsung Health match.
 
-Do not begin Phase 2 implementation, Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until sleep model investigation is complete and ≥7 days of observations exist in Postgres (~2026-06-13).
+Do not begin Phase 2 implementation, Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until ≥7 days of observations exist in Postgres (~2026-06-13).
 
 ---
 

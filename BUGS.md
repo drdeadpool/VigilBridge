@@ -248,7 +248,7 @@ Compute approximate resting HR as minimum `HeartRateRecord.BPM` between 02:00–
 ## INV-001: Samsung Health vs Health Connect Sleep Model Discrepancy
 
 **Severity:** High — trend analysis of sleep duration meaningless until resolved  
-**Status:** Open — must investigate before Phase 2 implementation  
+**Status:** RESOLVED — 2026-06-06  
 **Discovered:** 2026-06-06
 
 ### Symptom
@@ -277,11 +277,38 @@ Vigil is short by ~1h 9m (actual sleep) to 1h 46m (time in bed). Start time matc
 3. Compare `SleepSessionRecord.stages` breakdown to Samsung Health's stage graph.
 4. Determine: does "actual sleep" = sum of non-AWAKE stage durations? Does HC expose this or must Vigil compute it from stages?
 
-### Code Location
-`app/.../data/HealthRepository.kt` — `readLastSleep()` function.
+### Root Cause (Confirmed)
+Samsung Health splits one night's sleep into two `SleepSessionRecord` objects:
+- Session 1: `2026-06-05T20:18:00Z → 2026-06-06T00:51:00Z` (273 min, 54 stages)
+- Session 2: `2026-06-06T01:01:00Z → 2026-06-06T02:37:00Z` (96 min, 38 stages)
+- Gap: 10 min
 
-### Impact on Phase 2
-Cannot compute meaningful `sleep_duration_hours` baseline until the correct field is identified. All trend and circadian calculations downstream depend on this.
+Vigil's old 180-min minimum filter selected only session 1 (273 min) and discarded session 2 (96 min). Stage arithmetic: actual sleep = sum of non-AWAKE/non-OUT_OF_BED stage durations = 342 min = 5h42m across both sessions. Matches Samsung Health exactly.
+
+### Fix Applied
+- `SleepMerger.kt`: pure Kotlin merge algorithm. Groups sessions by ≤30-min gap tolerance, picks group with most actual sleep, rejects groups < 3h actual sleep.
+- `HealthRepository.kt`: calls merger, logs merged summary.
+- `DashboardViewModel.kt`: displays `actualSleepMinutes`, end time from merged block.
+- `VigilApiClient.kt`: sends `actualSleepMinutes`, `timeInBedMinutes`, `sleepSessionsCount`.
+- `extractor.py`: `sleep_duration_hours` from `actualSleepMinutes`; adds `time_in_bed_hours`, `sleep_sessions_count`; deprecates `sleep_midpoint_hour`.
+- `SleepMergerTest.kt`: 11 unit tests covering INV-001 scenario, gap boundaries, edge cases.
+
+### Verification Evidence (2026-06-06)
+Android logcat: `Merged sleep: sessions=2 start=2026-06-05T20:18:00Z end=2026-06-06T02:37:00Z actual=342min timeInBed=379min`
+
+Postgres (confirmed in DB):
+| Metric | Value | Status |
+|--------|-------|--------|
+| `sleep_start_hour` | 1.8 (1:48 AM IST) | ✓ |
+| `sleep_end_hour` | 8.1167 (8:07 AM IST) | ✓ matches Samsung Health |
+| `time_in_bed_hours` | 6.3167 (6h19m) | ✓ NEW metric, matches Samsung Health |
+| `sleep_sessions_count` | 2.0 | ✓ NEW metric |
+| `sleep_duration_hours` | 4.55 | old row (boundary diff, stuck — will be 5.70 from next night) |
+
+Note: `sleep_duration_hours` for June 5-6 night is stuck at 4.55 due to `ON CONFLICT DO NOTHING`. Correct 5.70 value will appear starting June 6-7 night.
+
+### Code Location
+`app/.../data/SleepMerger.kt`, `HealthRepository.kt`, `backend/app/services/extractor.py`
 
 ---
 
