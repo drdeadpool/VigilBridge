@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.util.Log
 import com.batman.vigilbridge.BuildConfig
 import com.batman.vigilbridge.data.RawDashboard
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -20,18 +21,27 @@ import java.util.concurrent.TimeUnit
 private const val TAG = "VigilApiClient"
 private val JSON_MEDIA = "application/json".toMediaType()
 
+sealed interface UploadResult {
+    data object Success : UploadResult
+    data class Retryable(val message: String) : UploadResult
+    data class Unauthorized(val message: String) : UploadResult
+    data class PermanentFailure(val message: String) : UploadResult
+}
+
 object VigilApiClient {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(75, TimeUnit.SECONDS)
+        .callTimeout(90, TimeUnit.SECONDS)
         .build()
 
-    suspend fun postSnapshot(
+    fun buildSnapshotPayload(
         context: Context,
         raw: RawDashboard,
         timestamp: Instant,
-    ): Boolean = withContext(Dispatchers.IO) {
+        eventId: String,
+    ): String {
         val androidId = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ANDROID_ID,
@@ -39,6 +49,7 @@ object VigilApiClient {
 
         val payload = JSONObject().apply {
             put("record_type", "snapshot")
+            put("payloadVersion", 2)
             put("timestampMs", timestamp.toEpochMilli())
             put("timezone", ZoneId.systemDefault().id)
             raw.stepsToday?.let { put("stepsToday", it) }
@@ -54,7 +65,8 @@ object VigilApiClient {
             raw.restingHeartRateBpm?.let { put("restingHrBpm", it) }
         }
 
-        val body = JSONObject().apply {
+        return JSONObject().apply {
+            put("event_id", eventId)
             put("user_external_id", androidId)
             put("device_identifier", Build.MODEL)
             put("device_model", Build.MODEL)
@@ -62,7 +74,9 @@ object VigilApiClient {
             put("source_app", "health_connect")
             put("payload", payload)
         }.toString()
+    }
 
+    suspend fun postPayload(body: String): UploadResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "POST /ingest payload=${body.length} bytes")
 
         val request = Request.Builder()
@@ -75,11 +89,21 @@ object VigilApiClient {
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string() ?: ""
                 Log.d(TAG, "POST /ingest status=${response.code} body=$responseBody")
-                response.isSuccessful
+                when {
+                    response.isSuccessful -> UploadResult.Success
+                    response.code == 401 || response.code == 403 ->
+                        UploadResult.Unauthorized("HTTP ${response.code}")
+                    response.code == 408 || response.code == 425 ||
+                        response.code == 429 || response.code >= 500 ->
+                        UploadResult.Retryable("HTTP ${response.code}")
+                    else -> UploadResult.PermanentFailure("HTTP ${response.code}")
+                }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "POST /ingest exception: ${e.message}")
-            false
+            Log.e(TAG, "POST /ingest exception", e)
+            UploadResult.Retryable(e.message ?: e.javaClass.simpleName)
         }
     }
 }

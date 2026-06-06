@@ -11,6 +11,10 @@ class IngestRequest(BaseModel):
     All raw payload is preserved.
     """
 
+    event_id: str | None = Field(
+        default=None,
+        description="Stable client outbox event identifier",
+    )
     user_external_id: str = Field(..., description="Caller-provided user identifier (e.g. device serial, account ID)")
     device_identifier: str = Field(..., description="Device hardware ID or model string")
     device_model: str | None = None

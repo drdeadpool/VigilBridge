@@ -41,8 +41,10 @@ User taps Refresh
       ├─ client.aggregate(steps today/7d/30d) [SecurityException if not RESUMED]
       ├─ client.readRecords(SleepSessionRecord, window prev-18:00→today-10:00, ≥180min filter)
       └─ client.aggregate(RestingHeartRateRecord.BPM_AVG, 7d)
-  → dao.insert(VitalsSnapshot) [Room local write]
-  → VigilApiClient.postSnapshot(context, raw, timestamp) [HTTP POST]
+  → Room transaction:
+      ├─ INSERT VitalsSnapshot
+      └─ INSERT immutable sync_outbox payload
+  → OutboxUploadWorker [network-constrained, exponential retry]
       → POST https://vigilbridge.onrender.com/ingest
           → extract_observations(payload)
           → INSERT INTO observations (multiple rows per snapshot)
@@ -58,8 +60,8 @@ WorkManager fires VitalsSyncWorker
   → Check REQUIRED_PERMISSIONS all granted (includes READ_HEALTH_DATA_IN_BACKGROUND)
   → HealthRepository(client, dao).load()
       [same HC reads as foreground, but requires READ_HEALTH_DATA_IN_BACKGROUND]
-  → dao.insert(VitalsSnapshot)
-  → VigilApiClient.postSnapshot(...) [fire-and-forget, failure does NOT retry worker]
+  → Room transaction: snapshot + sync_outbox event
+  → enqueue OutboxUploadWorker
   → Result.success()
 ```
 
@@ -130,7 +132,9 @@ View (Composables) ←─ StateFlow<DashboardUiState> ── ViewModel
                                                      │         │
                                                HC Client    Room DAO
                                                      │
-                                               VigilApiClient.postSnapshot()
+                                               SnapshotCaptureStore
+                                                      │
+                                               Room + sync_outbox
 ```
 
 Manual dependency injection. No Hilt. HealthRepository created in Composable via LocalContext, passed to ViewModel factory.
@@ -199,8 +203,8 @@ backend/
 |--------|------|------|---------|
 | POST | /ingest | X-Api-Key | 202 + {accepted, observations} |
 | GET | /health | None | {status, database} |
-| GET | /stats | X-Api-Key | {total, types, latest_timestamp} |
-| GET | /observations/recent | X-Api-Key | [{id, metric_type, value, unit, timestamp, source, timezone}] |
+| GET | /stats | READ_API_KEY | {total, types, latest_timestamp, quality_counts} |
+| GET | /observations/recent | READ_API_KEY | Valid observations by default |
 
 `GET /observations/recent` accepts `?limit=N` (1-100, default 20) and `?metric_type=sleep_start_hour`.
 
@@ -243,6 +247,9 @@ observations (
     timestamp    TIMESTAMPTZ INDEXED,
     source       VARCHAR(128),          -- "health_connect"
     raw_payload  JSONB,                 -- full original payload preserved
+    data_quality_status VARCHAR(32),     -- valid/probe/legacy/superseded
+    quality_reason VARCHAR(255),
+    reviewed_at  TIMESTAMPTZ,
     created_at   TIMESTAMPTZ
 )
 ```
@@ -326,7 +333,8 @@ vitals_snapshots table
   restingHrBpm   INTEGER?
 ```
 
-Room is used for: local persistence between syncs, dashboard startup cache (planned), offline resilience.
+Room stores local snapshots and the durable `sync_outbox`. Upload payloads are
+created once and retain their original event timestamps across retries.
 
 ---
 
@@ -364,7 +372,9 @@ Android sends `"timezone": "Asia/Kolkata"` (ZoneId.systemDefault().id). Backend 
 Acceptable for development and early validation. Will need to upgrade before multi-user production. Free tier spins down after 15min inactivity — first request takes ~30s.
 
 ### No auth system yet
-API key auth (shared secret in X-Api-Key header). Single user. No JWT, no OAuth. Appropriate for current single-device validation phase.
+Two scoped shared secrets are used during single-device validation:
+`INGEST_API_KEY` is embedded in the debug APK for writes, while `READ_API_KEY`
+is kept off-device for administrative reads. JWT/OAuth remains deferred.
 
 ### Manual DI over Hilt
 App complexity doesn't justify Hilt. ViewModel gets repository via factory pattern. If dependency graph grows past 3 levels, add Hilt.

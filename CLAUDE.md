@@ -22,7 +22,7 @@ All criteria proven with evidence. WorkManager autonomous sync confirmed: status
 
 INV-001 resolved 2026-06-06: Samsung Health splits one night into two `SleepSessionRecord` objects with 10-min gap. `SleepMerger.kt` now merges sessions within 30-min gaps and computes actual sleep from stage durations. New metrics: `time_in_bed_hours`, `sleep_sessions_count`. Verified: actual=342min (5h42m), timeInBed=379min (6h19m) — exact Samsung Health match.
 
-Do not begin Phase 2 implementation, Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until ≥7 days of observations exist in Postgres (~2026-06-13).
+Do not begin Phase 2 analytics, Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until the ingestion hardening changes are deployed and ≥7 valid days of observations exist in Postgres.
 
 ---
 
@@ -105,7 +105,10 @@ Before implementing anything new, determine its priority level and confirm all p
 - All HC reads in `HealthRepository` — never call HC client directly from ViewModel or Composable.
 - Prefer aggregate APIs (`client.aggregate()`) over `readRecords()` to avoid per-record deserialization failures (see BUG-002).
 - Health Connect reads require Activity at RESUMED state for foreground permission. WorkManager background reads require `READ_HEALTH_DATA_IN_BACKGROUND` permission.
-- `RawDashboard` couples ViewModel to HC SDK types. Acceptable until Phase 2; extract domain models before trend analysis.
+- Health Connect reads return typed `MetricRead` outcomes: `Value`, `NoData`, or `Failure`.
+- Never collapse a Health Connect exception into `null`; `null` is reserved for a successful read with no measurement.
+- Local capture and network upload are separate. Every accepted capture writes a Room snapshot and immutable outbox payload in one transaction.
+- Failed uploads remain in `sync_outbox` and are retried by `OutboxUploadWorker`.
 
 ### Both
 - No inline comments unless the WHY is non-obvious.
@@ -151,10 +154,10 @@ Keep BUGS.md current. Close bugs by marking status "Resolved" with fix descripti
 
 | ID | Status | Description |
 |----|--------|-------------|
-| BUG-001 | Open | onResume permission recheck missing |
+| BUG-001 | Resolved | onResume permission recheck implemented |
 | BUG-002 | Bypassed | Corrupt StepsRecord — aggregate API workaround in place |
 | BUG-003 | Open | UnavailableScreen uses magic int literals |
-| BUG-004 | Open | No error surface when all HC queries fail |
+| BUG-004 | Resolved | Typed HC outcomes distinguish no-data, partial failure, and total failure |
 | BUG-005 | Open | collectAsState vs collectAsStateWithLifecycle |
 | BUG-006 | Open | RestingHR unverified on S24 Ultra |
 | BUG-007 | Open | versionName = "1.0" should be "0.3" |
@@ -168,7 +171,7 @@ See BUGS.md for full detail and recommended fixes.
 1. Read CLAUDE.md (this file)
 2. Read ROADMAP.md for current state
 3. Verify backend health: `curl https://vigilbridge.onrender.com/health`
-4. Check current DB state: `curl https://vigilbridge.onrender.com/stats -H "X-Api-Key: 0dc8144910936507989abc28e059d7d5"`
+4. Check current DB state: `curl https://vigilbridge.onrender.com/stats -H "X-Api-Key: <READ_API_KEY>"`
 5. Check device connected: `adb -s R5CXB2KE0VF devices`
 6. Determine which priority level the current task belongs to
 7. Confirm prerequisite phases are complete before proceeding

@@ -18,6 +18,7 @@ import com.batman.vigilbridge.ui.UnavailableScreen
 import com.batman.vigilbridge.ui.VigilScreen
 import com.batman.vigilbridge.ui.theme.VigilBridgeTheme
 import com.batman.vigilbridge.work.VitalsSyncWorker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private const val TAG = "MainActivity"
@@ -45,6 +46,8 @@ class MainActivity : ComponentActivity() {
                 val granted = client.permissionController.getGrantedPermissions()
                 permissionsGranted.value = PERMISSIONS.all { it in granted }
                 Log.d(TAG, "onResume permission recheck: allGranted=${permissionsGranted.value}")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "onResume permission check failed", e)
             }
@@ -88,6 +91,8 @@ class MainActivity : ComponentActivity() {
                                     try {
                                         val g = client.permissionController.getGrantedPermissions()
                                         permissionsGranted.value = PERMISSIONS.all { it in g }
+                                    } catch (e: CancellationException) {
+                                        throw e
                                     } catch (e: Exception) {
                                         Log.e(TAG, "Manual recheck failed", e)
                                     }

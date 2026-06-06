@@ -7,16 +7,15 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.batman.vigilbridge.data.HealthRepository
 import com.batman.vigilbridge.data.VigilDatabase
-import com.batman.vigilbridge.network.VigilApiClient
+import com.batman.vigilbridge.sync.SnapshotCaptureStore
+import kotlinx.coroutines.CancellationException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -45,6 +44,8 @@ class VitalsSyncWorker(
 
         val granted = try {
             client.permissionController.getGrantedPermissions()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Permission check failed: ${e.message}")
             return Result.retry()
@@ -55,17 +56,22 @@ class VitalsSyncWorker(
         }
 
         return try {
-            val dao = VigilDatabase.get(applicationContext).vitalsDao()
-            val repo = HealthRepository(client, dao)
+            val database = VigilDatabase.get(applicationContext)
+            val repo = HealthRepository(client)
             val timestamp = Instant.now()
-            val raw = repo.load()
-            Log.d(TAG, "Background sync complete")
+            val load = repo.load()
 
-            // Fire-and-forget: POST failure does not retry the worker.
-            // Data is already persisted to Room; backend receives it next cycle on failure.
-            VigilApiClient.postSnapshot(applicationContext, raw, timestamp)
+            if (load.allReadsFailed) {
+                Log.e(TAG, "All Health Connect reads failed: ${load.failures}")
+                return if (load.hasRetryableFailures) Result.retry() else Result.failure()
+            }
 
+            SnapshotCaptureStore(applicationContext, database)
+                .persistAndEnqueue(load.dashboard, timestamp)
+            Log.d(TAG, "Background capture queued; partialFailures=${load.failures.size}")
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Background sync failed: ${e.message}")
             Result.retry()
@@ -75,11 +81,6 @@ class VitalsSyncWorker(
     companion object {
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<VitalsSyncWorker>(15, TimeUnit.MINUTES)
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -87,6 +88,7 @@ class VitalsSyncWorker(
                 ExistingPeriodicWorkPolicy.UPDATE,
                 request,
             )
+            OutboxUploadWorker.enqueue(context)
         }
     }
 }

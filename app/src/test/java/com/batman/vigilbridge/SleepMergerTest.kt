@@ -192,10 +192,13 @@ class SleepMergerTest {
     @Test
     fun `best group selected when multiple non-merging groups exist`() {
         // Long nap (but < 3h actual) followed by full night (> 3h actual) with big gap
+        val napStart = BASE - 4L * 3600L
         val nap = RawSleepSession(
-            startSeconds = BASE,
-            endSeconds   = BASE + 5400L,   // 90 min — below threshold
-            stages = listOf(RawSleepStage(BASE, BASE + 5400L, STAGE_LIGHT)),
+            startSeconds = napStart,
+            endSeconds   = napStart + 5400L,   // 90 min - below threshold
+            stages = listOf(
+                RawSleepStage(napStart, napStart + 5400L, STAGE_LIGHT)
+            ),
         )
         val fullNight = session1()  // 261 min actual sleep — above threshold
         val result = mergeSleepSessions(listOf(nap, fullNight))  // gap > 30 min between them

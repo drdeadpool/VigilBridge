@@ -1,6 +1,5 @@
 package com.batman.vigilbridge.ui
 
-import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -9,7 +8,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.batman.vigilbridge.data.HealthRepository
 import com.batman.vigilbridge.data.RawDashboard
-import com.batman.vigilbridge.network.VigilApiClient
+import com.batman.vigilbridge.sync.SnapshotCaptureStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,7 +36,7 @@ data class DashboardUiState(
 
 class DashboardViewModel(
     private val repo: HealthRepository,
-    private val context: Context,
+    private val captureStore: SnapshotCaptureStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())
@@ -48,23 +48,51 @@ class DashboardViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, syncError = null) }
 
-            val raw = try {
+            val load = try {
                 repo.load()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e(TAG, "HC load failed: ${e.message}")
+                Log.e(TAG, "HC load failed", e)
                 _state.update { it.copy(isLoading = false, syncError = "Health Connect unavailable") }
                 return@launch
             }
 
-            val posted = VigilApiClient.postSnapshot(context, raw, Instant.now())
+            if (load.allReadsFailed) {
+                Log.e(TAG, "All Health Connect reads failed: ${load.failures}")
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        syncError = "Health Connect reads failed",
+                    )
+                }
+                return@launch
+            }
 
-            _state.value = raw.toUiState().copy(
-                syncError = if (!posted) "Sync failed — check connection" else null,
+            val capturedAt = Instant.now()
+            try {
+                captureStore.persistAndEnqueue(load.dashboard, capturedAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Local capture failed", e)
+                _state.update {
+                    it.copy(isLoading = false, syncError = "Could not queue local snapshot")
+                }
+                return@launch
+            }
+
+            _state.value = load.dashboard.toUiState(capturedAt).copy(
+                syncError = if (load.hasFailures) {
+                    "Some Health Connect metrics could not be read"
+                } else {
+                    null
+                },
             )
         }
     }
 
-    private fun RawDashboard.toUiState(): DashboardUiState {
+    private fun RawDashboard.toUiState(capturedAt: Instant): DashboardUiState {
         val zone = ZoneId.systemDefault()
         val dateFmt = DateTimeFormatter.ofPattern("EEE h:mm a").withZone(zone)
         val timeFmt = DateTimeFormatter.ofPattern("h:mm a").withZone(zone)
@@ -83,13 +111,16 @@ class DashboardViewModel(
             lastSleepStart = lastSleep?.let { dateFmt.format(it.startTime) } ?: "—",
             lastSleepEnd = lastSleep?.let { timeFmt.format(it.endTime) } ?: "—",
             restingHeartRate = restingHeartRateBpm?.let { "$it bpm" } ?: "—",
-            lastSynced = "Synced ${syncFmt.format(Instant.now())}",
+            lastSynced = "Captured ${syncFmt.format(capturedAt)}",
         )
     }
 
     companion object {
-        fun factory(repo: HealthRepository, context: Context): ViewModelProvider.Factory = viewModelFactory {
-            initializer { DashboardViewModel(repo, context.applicationContext) }
+        fun factory(
+            repo: HealthRepository,
+            captureStore: SnapshotCaptureStore,
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { DashboardViewModel(repo, captureStore) }
         }
     }
 }

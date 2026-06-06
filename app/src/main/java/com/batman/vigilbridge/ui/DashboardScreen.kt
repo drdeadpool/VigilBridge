@@ -14,6 +14,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.batman.vigilbridge.data.HealthRepository
 import com.batman.vigilbridge.data.VigilDatabase
+import com.batman.vigilbridge.sync.SnapshotCaptureStore
 
 @Composable
 fun UnavailableScreen(status: Int) {
@@ -43,11 +44,17 @@ fun VigilScreen(
     }
 
     val context = LocalContext.current
-    val repo = remember(client) {
-        val dao = VigilDatabase.get(context.applicationContext).vitalsDao()
-        HealthRepository(client, dao)
+    val dependencies = remember(client) {
+        val appContext = context.applicationContext
+        val database = VigilDatabase.get(appContext)
+        HealthRepository(client) to SnapshotCaptureStore(appContext, database)
     }
-    val vm = viewModel<DashboardViewModel>(factory = DashboardViewModel.factory(repo, context))
+    val vm = viewModel<DashboardViewModel>(
+        factory = DashboardViewModel.factory(
+            repo = dependencies.first,
+            captureStore = dependencies.second,
+        )
+    )
     val state by vm.state.collectAsState()
 
     Dashboard(state = state, onRefresh = vm::refresh)

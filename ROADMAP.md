@@ -28,7 +28,7 @@ Last updated: 2026-06-06. Reflects current repo + deployment state.
 
 ## Current Phase: Phase 2 — Trend Analysis
 
-**Status: BLOCKED on data accumulation.**
+**Status: BLOCKED on ingestion hardening deployment and valid data accumulation.**
 
 ### INV-001 — RESOLVED 2026-06-06
 
@@ -103,6 +103,16 @@ All criteria must be proven with evidence:
 - [x] WorkManager autonomous sync proven: fired at 17:59:17, status=202, DB 40→56
 - [x] **Phase 1 declared complete**
 
+### 2026-06-06: Ingestion Hardening
+
+- [x] Separate ingest and read API credentials
+- [x] Protect `/stats` and `/observations/recent`
+- [x] Fix failing SleepMerger fixture
+- [x] Add typed Health Connect read outcomes
+- [x] Add Room outbox with classified retry behavior
+- [x] Add observation quality status and valid-only query helper
+- [ ] Verify rotated credentials, migration, and outbox against live deployment
+
 ---
 
 ## Active Work
@@ -125,9 +135,9 @@ INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2
 | ID | File | Issue | Fix |
 |----|------|-------|-----|
 | BUG-001 | MainActivity.kt | onResume permission recheck missing — silent stale state after Settings grant | Add `onResume()` + `lifecycleScope.launch + getGrantedPermissions()` |
-| BUG-004 | DashboardViewModel.kt | No error state when all HC queries fail — user sees `—` with no explanation | Add `loadError: String?` to DashboardUiState |
+| BUG-004 | DashboardViewModel.kt | Resolved with typed Health Connect outcomes and partial/total failure handling | Keep regression tests |
 | — | DashboardViewModel.kt | `init { refresh() }` fires before Activity RESUMED, HC reads fail silently | Move initial POST to `LaunchedEffect` or lifecycle observer |
-| — | HealthRepository.kt | `RawDashboard.lastSleep` is `SleepSessionRecord` (HC SDK type leaking into domain) | Extract `SleepSummary` data class — required before trend queries over sleep fields |
+| — | Android sync | Verify Room outbox migration and retry behavior on device | Test queued upload across forced network failure |
 
 ### Fix during Phase 2
 
@@ -165,9 +175,9 @@ Phase 1 complete. Phase 2 entry criteria gate:
 2. ✅ ~~**Fix BUG-001**~~ — DONE (2026-06-06)
 
 ### P1 — Data quality before trend computation
-3. **Extract `SleepSummary` domain model** — decouple from HC SDK type before trend queries
+3. **Deploy and verify ingestion hardening**
 4. **Fix BUG-006** — implement `HeartRateRecord.BPM_MIN` fallback for resting HR
-5. **Fix BUG-004** — add error surface to dashboard
+5. **Accumulate ≥7 valid days after data-quality filtering**
 
 ### P2 — Phase 2 implementation (after ~2026-06-13)
 6. **`trends` table + Alembic migration**

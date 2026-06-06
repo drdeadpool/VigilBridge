@@ -124,7 +124,7 @@ Ingest a Health Connect webhook payload. Extracts typed observations and stores 
 
 ### `GET /stats`
 
-Summary of stored data.
+Summary of valid stored data. Requires `x-api-key: <READ_API_KEY>`.
 
 ```json
 {
@@ -137,6 +137,11 @@ Summary of stored data.
   "latest_timestamp": "2026-06-05T14:23:00+00:00"
 }
 ```
+
+### `GET /observations/recent`
+
+Returns valid observations by default. Requires `x-api-key: <READ_API_KEY>`.
+Use `include_invalid=true` only for administrative data-quality review.
 
 ---
 
@@ -226,5 +231,7 @@ python -m alembic current
 | `POSTGRES_USER` | `vigil` | Docker Compose only |
 | `POSTGRES_PASSWORD` | `vigil` | Docker Compose only |
 | `POSTGRES_DB` | `vigil` | Docker Compose only |
-| `INGEST_API_KEY` | `changeme` | Bearer key for POST /ingest |
+| `INGEST_API_KEY` | none | Required key for POST /ingest |
+| `READ_API_KEY` | none | Separate key for protected read endpoints |
+| `ENABLE_DOCS` | `false` | Enables Swagger, ReDoc, and OpenAPI routes |
 | `LOG_LEVEL` | `INFO` | Python logging level |

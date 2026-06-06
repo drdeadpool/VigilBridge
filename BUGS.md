@@ -6,7 +6,7 @@ Last updated: 2026-06-06.
 ## BUG-001: Permission Gate Does Not Auto-Transition After Grant
 
 **Severity:** High — impacts every new install  
-**Status:** Open  
+**Status:** Resolved — 2026-06-06
 **Introduced:** v0.2 refactor  
 
 ### Symptom
@@ -85,6 +85,10 @@ override fun onResume() {
 }
 ```
 
+### Resolution
+Permission state is hoisted to the Activity and refreshed from both the permission
+launcher callback and `onResume()`.
+
 ---
 
 ## BUG-002: Corrupt StepsRecord in Health Connect Database
@@ -143,7 +147,7 @@ If the corrupt record's date falls within the aggregate time window, the aggrega
 ## BUG-003: UnavailableScreen Uses Magic Integer Literals
 
 **Severity:** Low — not a runtime crash; wrong message displayed if constants change  
-**Status:** Open  
+**Status:** Open
 **Introduced:** v0.2 refactor (moving composables to `ui` package)  
 
 ### Symptom
@@ -190,6 +194,11 @@ Each query in `HealthRepository` catches `Exception` and returns `null`. `null` 
 
 ### Recommended Fix
 Add `val loadError: String?` to `DashboardUiState`. In `DashboardViewModel.refresh()`, catch top-level failure and set error. In `Dashboard` composable, show an error banner when `loadError != null`.
+
+### Resolution
+Repository reads now return `MetricRead.Value`, `MetricRead.NoData`, or
+`MetricRead.Failure`. Total failure blocks persistence/upload, partial failure is
+surfaced to the dashboard, and transient failures are retryable in WorkManager.
 
 ---
 
@@ -325,3 +334,23 @@ Note: `sleep_duration_hours` for June 5-6 night is stuck at 4.55 due to `ON CONF
 versionCode = 2
 versionName = "0.2"
 ```
+
+---
+
+## BUG-008: API Key Exposed and Read Endpoints Unauthenticated
+
+**Severity:** Critical
+**Status:** Resolved in hardening implementation — deployment verification required
+**Discovered:** 2026-06-06
+
+### Root Cause
+The ingest key was committed in documentation, while `/stats` and
+`/observations/recent` lacked authentication despite architecture docs claiming
+otherwise.
+
+### Resolution
+- Rotate the deployed ingest key and rebuild the Android APK.
+- Use an independent `READ_API_KEY` for administrative read endpoints.
+- Compare credentials with `secrets.compare_digest`.
+- Disable production OpenAPI/Swagger/ReDoc surfaces by default.
+- Remove plaintext credentials from the current repository tree.

@@ -21,8 +21,10 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vigil}:${POSTGRES_PASSWORD:-vigil}@postgres:5432/${POSTGRES_DB:-vigil}
-      INGEST_API_KEY: ${INGEST_API_KEY:-changeme}
+      INGEST_API_KEY: ${INGEST_API_KEY:?INGEST_API_KEY is required}
+      READ_API_KEY: ${READ_API_KEY:?READ_API_KEY is required}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
     depends_on:
       postgres:
         condition: service_healthy
