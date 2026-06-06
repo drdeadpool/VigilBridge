@@ -126,9 +126,7 @@ All criteria must be proven with evidence:
 INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2 now blocked only on accumulating ≥7 days of real observations.
 
 **While waiting — fix before Phase 2 starts:**
-1. **BUG-001** — onResume permission recheck (prevents silent collection gaps)
-2. **BUG-004** — error surface when HC queries fail
-3. **BUG-006** — verify resting HR or implement fallback
+1. **BUG-006** — verify resting HR or implement HeartRateRecord.BPM_MIN fallback
 
 ---
 
@@ -138,8 +136,6 @@ INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2
 
 | ID | File | Issue | Fix |
 |----|------|-------|-----|
-| BUG-001 | MainActivity.kt | onResume permission recheck missing — silent stale state after Settings grant | Add `onResume()` + `lifecycleScope.launch + getGrantedPermissions()` |
-| BUG-004 | DashboardViewModel.kt | Resolved with typed Health Connect outcomes and partial/total failure handling | Keep regression tests |
 | — | DashboardViewModel.kt | `init { refresh() }` fires before Activity RESUMED, HC reads fail silently | Move initial POST to `LaunchedEffect` or lifecycle observer |
 | — | Android sync | Verify Room outbox migration and retry behavior on device | Test queued upload across forced network failure |
 

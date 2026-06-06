@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1 import health, ingest, stats
+from app.api.v1 import health, ingest, stats, trends
 from app.config import settings
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -31,3 +31,4 @@ app = FastAPI(
 app.include_router(ingest.router)
 app.include_router(health.router)
 app.include_router(stats.router)
+app.include_router(trends.router)
