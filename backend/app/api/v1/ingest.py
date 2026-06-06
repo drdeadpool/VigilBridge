@@ -1,8 +1,10 @@
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -55,21 +57,33 @@ async def ingest(
     # Extract observations from payload
     extracted = extract_observations(body.payload, source=body.source_app or "health_connect")
 
-    saved: list[Observation] = []
+    # Insert with ON CONFLICT DO NOTHING — unique key: (user_id, metric_type, timestamp).
+    # Sleep timing rows use event-based timestamps (stable per session) so duplicates are
+    # silently dropped. Steps rows use sync-based timestamps so each sync creates a new row.
+    saved: list[dict] = []
     for obs_data in extracted:
-        obs = Observation(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            device_id=device.id,
-            metric_type=obs_data["metric_type"],
-            value=obs_data.get("value"),
-            unit=obs_data.get("unit"),
-            timestamp=obs_data["timestamp"],
-            source=obs_data.get("source"),
-            raw_payload=body.payload,
+        obs_id = uuid.uuid4()
+        stmt = (
+            pg_insert(Observation)
+            .values(
+                id=obs_id,
+                user_id=user.id,
+                device_id=device.id,
+                metric_type=obs_data["metric_type"],
+                value=obs_data.get("value"),
+                unit=obs_data.get("unit"),
+                timestamp=obs_data["timestamp"],
+                source=obs_data.get("source"),
+                raw_payload=body.payload,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["user_id", "metric_type", "timestamp"]
+            )
+            .returning(Observation.id, Observation.timestamp)
         )
-        db.add(obs)
-        saved.append(obs)
+        row = (await db.execute(stmt)).one_or_none()
+        if row is not None:
+            saved.append({**obs_data, "id": obs_id})
 
     await db.commit()
 
@@ -77,13 +91,13 @@ async def ingest(
         accepted=len(saved),
         observations=[
             ObservationOut(
-                id=str(obs.id),
-                metric_type=obs.metric_type,
-                value=float(obs.value) if obs.value is not None else None,
-                unit=obs.unit,
-                timestamp=obs.timestamp,
-                source=obs.source,
+                id=str(s["id"]),
+                metric_type=s["metric_type"],
+                value=float(s["value"]) if s.get("value") is not None else None,
+                unit=s.get("unit"),
+                timestamp=s["timestamp"] if isinstance(s["timestamp"], datetime) else s["timestamp"],
+                source=s.get("source"),
             )
-            for obs in saved
+            for s in saved
         ],
     )
