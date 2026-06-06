@@ -340,7 +340,7 @@ versionName = "0.2"
 ## BUG-008: API Key Exposed and Read Endpoints Unauthenticated
 
 **Severity:** Critical
-**Status:** Resolved in hardening implementation — deployment verification required
+**Status:** Resolved and deployed — 2026-06-06
 **Discovered:** 2026-06-06
 
 ### Root Cause

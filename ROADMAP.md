@@ -111,7 +111,11 @@ All criteria must be proven with evidence:
 - [x] Add typed Health Connect read outcomes
 - [x] Add Room outbox with classified retry behavior
 - [x] Add observation quality status and valid-only query helper
-- [ ] Verify rotated credentials, migration, and outbox against live deployment
+- [x] Verify rotated credentials, migration, and outbox against live deployment
+  - Public `/stats` now returns 401; production docs return 404
+  - Read key is independently scoped; ingest key cannot access read endpoints
+  - Live quality counts confirmed and default recent query returned only valid rows
+  - Device Room schema v2 confirmed; outbox drained after a 202 upload
 
 ---
 
