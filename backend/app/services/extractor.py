@@ -20,6 +20,7 @@ FHIR metric_type codes follow LOINC conventions where applicable:
 
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def _parse_ts(value: Any) -> datetime | None:
@@ -185,6 +186,10 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
     """
     VigilBridge VitalsSnapshot format — matches current Room entity.
     Converts one snapshot into multiple observations.
+
+    Sleep timing metrics are computed in device-local time using the
+    IANA timezone id sent in payload["timezone"]. Falls back to UTC
+    if the field is absent or invalid.
     """
     results = []
     ts_ms = payload.get("timestampMs") or payload.get("timestamp_ms")
@@ -209,18 +214,58 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
                 "source": source,
             })
 
-    # Sleep timing — timestamp IS the authoritative event time;
-    # value = hour-of-day decimal for circadian arithmetic (e.g. 23.5 = 11:30 PM)
-    for ms_key, metric_type in (("sleepStartMs", "sleep_start_hour"), ("sleepEndMs", "sleep_end_hour")):
-        ms_val = payload.get(ms_key)
-        event_ts = _parse_ts(ms_val)
-        if event_ts is not None:
-            hour_of_day = event_ts.hour + event_ts.minute / 60.0
+    sleep_start_ms = payload.get("sleepStartMs")
+    sleep_end_ms = payload.get("sleepEndMs")
+
+    if sleep_start_ms is not None or sleep_end_ms is not None:
+        tz_str = payload.get("timezone") or "UTC"
+        try:
+            tz = ZoneInfo(tz_str)
+        except (ZoneInfoNotFoundError, KeyError):
+            tz = timezone.utc
+
+        def _local_hour(utc_dt: datetime) -> float:
+            local = utc_dt.astimezone(tz)
+            return round(local.hour + local.minute / 60.0 + local.second / 3600.0, 4)
+
+        start_utc = _parse_ts(sleep_start_ms) if sleep_start_ms is not None else None
+        end_utc = _parse_ts(sleep_end_ms) if sleep_end_ms is not None else None
+
+        if start_utc is not None:
             results.append({
-                "metric_type": metric_type,
-                "value": round(hour_of_day, 4),
+                "metric_type": "sleep_start_hour",
+                "value": _local_hour(start_utc),
                 "unit": "hour",
-                "timestamp": event_ts,
+                "timestamp": start_utc,
+                "source": source,
+            })
+
+        if end_utc is not None:
+            results.append({
+                "metric_type": "sleep_end_hour",
+                "value": _local_hour(end_utc),
+                "unit": "hour",
+                "timestamp": end_utc,
+                "source": source,
+            })
+
+        if start_utc is not None and end_utc is not None:
+            mid_epoch_s = (sleep_start_ms + sleep_end_ms) / 2000.0
+            mid_utc = datetime.fromtimestamp(mid_epoch_s, tz=timezone.utc)
+            results.append({
+                "metric_type": "sleep_midpoint_hour",
+                "value": _local_hour(mid_utc),
+                "unit": "hour",
+                "timestamp": mid_utc,
+                "source": source,
+            })
+
+            duration_hours = round((end_utc - start_utc).total_seconds() / 3600.0, 4)
+            results.append({
+                "metric_type": "sleep_duration_hours",
+                "value": duration_hours,
+                "unit": "hours",
+                "timestamp": start_utc,
                 "source": source,
             })
 

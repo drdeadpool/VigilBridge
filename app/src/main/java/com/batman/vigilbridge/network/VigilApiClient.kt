@@ -14,6 +14,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "VigilApiClient"
@@ -39,6 +40,7 @@ object VigilApiClient {
         val payload = JSONObject().apply {
             put("record_type", "snapshot")
             put("timestampMs", timestamp.toEpochMilli())
+            put("timezone", ZoneId.systemDefault().id)
             raw.stepsToday?.let { put("stepsToday", it) }
             raw.steps7d?.let { put("steps7d", it) }
             raw.steps30d?.let { put("steps30d", it) }
