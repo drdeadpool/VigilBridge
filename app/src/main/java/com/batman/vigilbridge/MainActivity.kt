@@ -13,6 +13,7 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.lifecycle.lifecycleScope
 import com.batman.vigilbridge.ui.UnavailableScreen
 import com.batman.vigilbridge.ui.VigilScreen
 import com.batman.vigilbridge.ui.theme.VigilBridgeTheme
@@ -33,6 +34,23 @@ class MainActivity : ComponentActivity() {
     private var healthConnectClient: HealthConnectClient? = null
     private var sdkStatus: Int = HealthConnectClient.SDK_UNAVAILABLE
 
+    // Hoisted outside setContent so onResume() can write to it.
+    private val permissionsGranted = mutableStateOf(false)
+
+    override fun onResume() {
+        super.onResume()
+        val client = healthConnectClient ?: return
+        lifecycleScope.launch {
+            try {
+                val granted = client.permissionController.getGrantedPermissions()
+                permissionsGranted.value = PERMISSIONS.all { it in granted }
+                Log.d(TAG, "onResume permission recheck: allGranted=${permissionsGranted.value}")
+            } catch (e: Exception) {
+                Log.e(TAG, "onResume permission check failed", e)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -50,41 +68,31 @@ class MainActivity : ComponentActivity() {
                     if (client == null) {
                         UnavailableScreen(sdkStatus)
                     } else {
-                        val scope = rememberCoroutineScope()
-                        var permissionsGranted by remember { mutableStateOf(false) }
+                        val granted by permissionsGranted
 
                         val launcher = rememberLauncherForActivityResult(
                             PermissionController.createRequestPermissionResultContract()
-                        ) { granted ->
-                            Log.d(TAG, "Permissions granted: $granted")
-                            permissionsGranted = PERMISSIONS.all { it in granted }
-                        }
-
-                        LaunchedEffect(Unit) {
-                            try {
-                                val granted = client.permissionController.getGrantedPermissions()
-                                permissionsGranted = PERMISSIONS.all { it in granted }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Permission check failed", e)
-                            }
+                        ) { grantedPerms ->
+                            Log.d(TAG, "Permission dialog result: $grantedPerms")
+                            permissionsGranted.value = PERMISSIONS.all { it in grantedPerms }
                         }
 
                         VigilScreen(
                             client = client,
-                            permissionsGranted = permissionsGranted,
+                            permissionsGranted = granted,
                             onRequestPermissions = {
                                 launcher.launch(PERMISSIONS)
                             },
                             onRecheck = {
-                                scope.launch {
+                                lifecycleScope.launch {
                                     try {
-                                        val granted = client.permissionController.getGrantedPermissions()
-                                        permissionsGranted = PERMISSIONS.all { it in granted }
+                                        val g = client.permissionController.getGrantedPermissions()
+                                        permissionsGranted.value = PERMISSIONS.all { it in g }
                                     } catch (e: Exception) {
-                                        Log.e(TAG, "Re-check failed", e)
+                                        Log.e(TAG, "Manual recheck failed", e)
                                     }
                                 }
-                            }
+                            },
                         )
                     }
                 }

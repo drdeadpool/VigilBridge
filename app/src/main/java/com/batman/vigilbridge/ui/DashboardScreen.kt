@@ -103,6 +103,22 @@ private fun Dashboard(state: DashboardUiState, onRefresh: () -> Unit) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
+        if (state.syncError != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+            ) {
+                Text(
+                    text = state.syncError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+        }
+
         SectionLabel("Steps")
         MetricCard(label = "Today", value = state.stepsToday)
         MetricCard(label = "Last 7 days", value = state.steps7d)

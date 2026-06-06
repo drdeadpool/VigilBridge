@@ -1,6 +1,7 @@
 package com.batman.vigilbridge.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -18,6 +19,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+private const val TAG = "DashboardViewModel"
+
 data class DashboardUiState(
     val isLoading: Boolean = true,
     val stepsToday: String = "—",
@@ -28,6 +31,7 @@ data class DashboardUiState(
     val lastSleepEnd: String = "—",
     val restingHeartRate: String = "—",
     val lastSynced: String = "",
+    val syncError: String? = null,
 )
 
 class DashboardViewModel(
@@ -42,10 +46,21 @@ class DashboardViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true) }
-            val raw = repo.load()
-            _state.value = raw.toUiState()
-            VigilApiClient.postSnapshot(context, raw, Instant.now())
+            _state.update { it.copy(isLoading = true, syncError = null) }
+
+            val raw = try {
+                repo.load()
+            } catch (e: Exception) {
+                Log.e(TAG, "HC load failed: ${e.message}")
+                _state.update { it.copy(isLoading = false, syncError = "Health Connect unavailable") }
+                return@launch
+            }
+
+            val posted = VigilApiClient.postSnapshot(context, raw, Instant.now())
+
+            _state.value = raw.toUiState().copy(
+                syncError = if (!posted) "Sync failed — check connection" else null,
+            )
         }
     }
 
