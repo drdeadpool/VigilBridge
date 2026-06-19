@@ -3,6 +3,7 @@ package com.batman.vigilbridge.data
 import android.os.RemoteException
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -13,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 
 private const val TAG = "HealthRepository"
@@ -104,16 +106,35 @@ class HealthRepository(
 
     private suspend fun readRestingHR(now: Instant): MetricRead<Long> =
         readMetric("resting_hr") {
-        val value = client.aggregate(
+        // Stage 1: RestingHeartRateRecord — Samsung Health does not write this to Health Connect
+        // on S24 Ultra. Check kept for forward compatibility.
+        val restingValue = client.aggregate(
             AggregateRequest(
                 metrics = setOf(RestingHeartRateRecord.BPM_AVG),
                 timeRangeFilter = TimeRangeFilter.between(
-                    startTime = now.minusSeconds(7L * 86_400),
+                    startTime = now.minusSeconds(24L * 3600),
                     endTime = now,
                 ),
             )
         )[RestingHeartRateRecord.BPM_AVG]
-        value?.let { MetricRead.Value(it) } ?: MetricRead.NoData
+        if (restingValue != null) return@readMetric MetricRead.Value(restingValue)
+
+        // Stage 2: Fallback — minimum HeartRateRecord BPM during 02:00–06:00 device-local time.
+        // Samsung Health writes HeartRateRecord during sleep. BPM_MIN in this deep-sleep window
+        // approximates resting HR. (BUG-006)
+        val zone = ZoneId.systemDefault()
+        val localNow = LocalDateTime.ofInstant(now, zone)
+        val windowDate = if (localNow.hour >= 6) localNow.toLocalDate() else localNow.toLocalDate().minusDays(1)
+        val windowStart = windowDate.atTime(2, 0).atZone(zone).toInstant()
+        val windowEnd   = windowDate.atTime(6, 0).atZone(zone).toInstant()
+
+        val fallbackValue = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(HeartRateRecord.BPM_MIN),
+                timeRangeFilter = TimeRangeFilter.between(windowStart, windowEnd),
+            )
+        )[HeartRateRecord.BPM_MIN]
+        fallbackValue?.let { MetricRead.Value(it) } ?: MetricRead.NoData
     }
 
     private suspend fun <T> readMetric(

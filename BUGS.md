@@ -184,7 +184,7 @@ Option B — Pass resolved string from `MainActivity` (cleaner architecture):
 ## BUG-004: No Error Surface When All Queries Fail
 
 **Severity:** Medium — silent failure, user confusion  
-**Status:** Open  
+**Status:** Resolved — 2026-06-06  
 
 ### Symptom
 If Health Connect service is unavailable, all 5 queries in `HealthRepository.load()` fail silently. `DashboardUiState` shows `—` for every metric with no explanation. User cannot distinguish between "no data" and "query failed".
@@ -232,25 +232,28 @@ val state by vm.state.collectAsStateWithLifecycle()
 ## BUG-006: Resting Heart Rate Not Verified on Device
 
 **Severity:** Medium — feature may silently return `—` always  
-**Status:** Deferred to Phase 2  
+**Status:** Resolved — 2026-06-19
 
 ### Symptom
 `RestingHeartRateRecord.BPM_AVG` aggregate was implemented in `HealthRepository` but never confirmed to return a non-null value on the S24 Ultra.
 
 ### Root Cause
-Samsung Health may not write `RestingHeartRateRecord` entries to Health Connect, even if it computes resting HR internally. Health Connect data sharing requires explicit configuration in Samsung Health.
+Samsung Health does **not** write `RestingHeartRateRecord` to Health Connect on S24 Ultra. Confirmed by data audit (2026-06-19): zero valid `resting_hr_bpm` rows after 13 days of collection. `RestingHeartRateRecord.BPM_AVG` aggregate returns null on every sync.
 
-### Evidence
-None. Feature was implemented at end of session without device verification.
+### Fix
+Two-stage fallback in `HealthRepository.readRestingHR()`:
+1. Try `RestingHeartRateRecord.BPM_AVG` last 24h (kept for forward compatibility)
+2. If null → fallback: `HeartRateRecord.BPM_MIN` over 02:00–06:00 device-local window. Samsung Health writes `HeartRateRecord` during sleep. Minimum BPM in this deep-sleep window approximates resting HR.
 
-### Investigation Steps
-1. Open Health Connect app on device
-2. Check Data and access → All data → Resting heart rate
-3. If empty: Samsung Health is not sharing this data type to Health Connect
-4. If present: check that VigilBridge has `READ_RESTING_HEART_RATE` permission granted
+New `READ_HEART_RATE` permission added to manifest, `MainActivity.PERMISSIONS`, and `VitalsSyncWorker.REQUIRED_PERMISSIONS`.
 
-### Fallback (Phase 2 implementation)
-Compute approximate resting HR as minimum `HeartRateRecord.BPM` between 02:00–06:00 (deep sleep window, lowest HR). `HeartRateRecord` is shared by Samsung Health to Health Connect. Deferred from Phase 1: resting HR is a data quality issue, not a pipeline reliability issue. Phase 1 objective was proving end-to-end ingestion, not data completeness.
+### Verification (2026-06-19)
+- Permission granted on device: `allGranted=true` confirmed in logcat
+- HTTP 202 responses with `"metric_type":"resting_hr_bpm","value":57.0,"unit":"bpm"`
+- 3 valid rows in production Postgres, `data_quality_status=valid`, value=57 bpm
+
+### Remaining Limitation
+Multiple syncs per day produce multiple rows (same value, different timestamps). Analytics must use `MIN(value) GROUP BY day`. Per-night timestamp anchor deferred to pre-baseline-engine cleanup.
 
 ---
 

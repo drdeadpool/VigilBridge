@@ -28,7 +28,7 @@ observations (Postgres)
 ```sql
 CREATE TABLE baselines (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     INTEGER NOT NULL REFERENCES users(id),
+    user_id     UUID    NOT NULL REFERENCES users(id),
     metric_type VARCHAR(64) NOT NULL,
     period_days INTEGER NOT NULL,        -- 7, 14, or 30
     computed_at TIMESTAMPTZ NOT NULL,
@@ -55,7 +55,8 @@ SELECT
     date_trunc('day', timestamp AT TIME ZONE user_tz) AS day,
     AVG(value) AS daily_avg
 FROM observations
-WHERE user_id = ? AND metric_type = ? AND timestamp > now() - interval '? days'
+WHERE user_id = ? AND metric_type = ? AND data_quality_status = 'valid'
+  AND timestamp > now() - interval '? days'
 GROUP BY 1
 ORDER BY 1
 ```
