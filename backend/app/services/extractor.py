@@ -18,7 +18,7 @@ FHIR metric_type codes follow LOINC conventions where applicable:
   respiratory_rate → 9279-1
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -201,14 +201,19 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
     ts_ms = payload.get("timestampMs") or payload.get("timestamp_ms")
     ts = _parse_ts(ts_ms) or _now()
 
-    field_map = [
-        ("stepsToday",   "steps_today",   "steps"),
-        ("steps7d",      "steps_7d",      "steps"),
-        ("steps30d",     "steps_30d",     "steps"),
-        ("restingHrBpm", "resting_hr_bpm", "bpm"),
-    ]
+    tz_str = payload.get("timezone") or "UTC"
+    try:
+        tz = ZoneInfo(tz_str)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = timezone.utc
 
-    for camel, snake, unit in field_map:
+    # Steps use the sync timestamp — multiple readings/day is correct time-series behaviour.
+    step_fields = [
+        ("stepsToday", "steps_today", "steps"),
+        ("steps7d",    "steps_7d",    "steps"),
+        ("steps30d",   "steps_30d",   "steps"),
+    ]
+    for camel, snake, unit in step_fields:
         val = payload.get(camel) or payload.get(snake)
         if val is not None:
             results.append({
@@ -219,15 +224,33 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
                 "source": source,
             })
 
+    # resting_hr_bpm: exactly one observation per physiological day, anchored to 02:00 local.
+    # BUG-006 reads BPM_MIN over a 02:00-06:00 window whose date is "today" when the capture
+    # hour >= 6, else "yesterday". Re-derive that physiological day from the capture instant and
+    # anchor at 02:00 local so repeated syncs upsert into a single stable daily row (ADR-004).
+    resting_val = payload.get("restingHrBpm") or payload.get("resting_hr_bpm")
+    if resting_val is not None:
+        local_capture = ts.astimezone(tz)
+        phys_day = (
+            local_capture.date()
+            if local_capture.hour >= 6
+            else local_capture.date() - timedelta(days=1)
+        )
+        anchor_utc = datetime(
+            phys_day.year, phys_day.month, phys_day.day, 2, 0, tzinfo=tz
+        ).astimezone(timezone.utc)
+        results.append({
+            "metric_type": "resting_hr_bpm",
+            "value": float(resting_val),
+            "unit": "bpm",
+            "timestamp": anchor_utc,
+            "source": source,
+        })
+
     sleep_start_ms = payload.get("sleepStartMs")
     sleep_end_ms   = payload.get("sleepEndMs")
 
     if sleep_start_ms is not None or sleep_end_ms is not None:
-        tz_str = payload.get("timezone") or "UTC"
-        try:
-            tz = ZoneInfo(tz_str)
-        except (ZoneInfoNotFoundError, KeyError):
-            tz = timezone.utc
 
         def _local_hour(utc_dt: datetime) -> float:
             local = utc_dt.astimezone(tz)
