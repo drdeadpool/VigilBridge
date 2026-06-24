@@ -393,3 +393,61 @@ Decision deferred. Do NOT implement before Recovery Engine.
 ### Evidence
 Backend audit 2026-06-24 (prod): `sleep_duration_hours` event-date rows show Jun 20 ×2,
 Jun 21 ×0. Capture start `06-20 22:39` → end `06-21 06:44`, actualMin 447.
+
+### Separation from BUG-010 (do NOT conflate)
+BUG-010 explains the **duration** discrepancy (Samsung time-in-bed vs Vigil actual-sleep) and
+found no transport defect. That does **not** resolve BUG-009. BUG-009 is a **date/start-assignment**
+defect — which calendar day a night is attributed to — and remains **open and unverified**.
+Do not close BUG-009 on the basis of BUG-010 findings.
+
+### Re-validation Protocol (next session)
+Pick a **midnight-crossing** session and compare start/end across all layers:
+
+| Layer | sleep start | sleep end |
+|-------|-------------|-----------|
+| Samsung Health (display) | | |
+| HC `SleepSessionRecord` (raw, per record) | | |
+| Vigil stored `sleep_start_hour` / `sleepStartMs` | | |
+| Vigil stored `sleep_end_hour` / `sleepEndMs` | | |
+
+Confirm: which calendar day the night is assigned to, and whether a pre-midnight bedtime
+double-counts on the evening date or vanishes from the adjacent day.
+
+---
+
+## BUG-010: Dashboard Sleep Card Reports Only Actual Sleep — No Time-in-Bed / Awake / Efficiency
+
+**Severity:** Low — UX/interpretation; no data loss (data-model side resolved in INV-001)
+**Status:** Open — Deferred (UX, after Recovery Engine)
+**Discovered:** 2026-06-24
+
+### Symptom
+Samsung Health's headline sleep figure is **time in bed**; the dashboard "Duration" card
+(`DashboardViewModel.kt:102`) surfaces only **actual sleep** (`actualSleepMinutes`). The two
+numbers differ by the night's awake-in-bed time, so a user comparing screens perceives Vigil
+as "short" by ~40–60 min when no error exists.
+
+### Root Cause (localized 2026-06-24, not a defect)
+Definitional, introduced at `SleepMerger.actualSleepSeconds()` (`SleepMerger.kt:83-92`), which
+excludes `STAGE_AWAKE` + `STAGE_OUT_OF_BED`. Full trace through HC → readLastSleep → payload →
+Postgres confirmed every layer faithfully carries both numbers; only the UI presents one.
+
+Worked example (night 2026-06-23→24, prod):
+- Envelope 00:22 → 08:19 = 477 min → `time_in_bed_hours` = 7.95h (≈ Samsung 7h55m)
+- Awake/out-of-bed = 56 min
+- Actual sleep = 421 min → `sleep_duration_hours` = 7.02h (the "short" number)
+- `sleep_sessions_count` = 3
+
+### Consequence
+Pure interpretation gap. Both metrics already persisted in Postgres; nothing missing upstream.
+Scope note: this is **duration only**. It does not touch BUG-009 (date/start-assignment),
+which remains open and separately tracked.
+
+### Candidate Solution (not yet designed)
+Surface a fuller sleep breakdown on the dashboard: Time in Bed, Actual Sleep, Awake Time,
+Sleep Efficiency (actual / in-bed). Decision deferred. Do NOT implement before Recovery Engine.
+
+### Evidence
+Prod observations (ts 2026-06-23T18:52Z): `time_in_bed_hours`=7.95, `sleep_duration_hours`=7.02,
+`sleep_start_hour`=0.367, `sleep_end_hour`=8.317, `sleep_sessions_count`=3. On-device snapshot
+354: `activeEnergyKcal`=null, sleep envelope 477m vs stored 421m.

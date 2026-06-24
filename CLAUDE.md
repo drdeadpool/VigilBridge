@@ -167,6 +167,7 @@ Keep BUGS.md current. Close bugs by marking status "Resolved" with fix descripti
 | BUG-007 | Open | versionName = "1.0" should be "0.3" |
 | BUG-008 | Resolved | API key exposure + unauth read endpoints — rotated key, READ_API_KEY, docs disabled (2026-06-06) |
 | BUG-009 | Open (Deferred) | Sleep dated by local sleep-start, no physiological-night anchor → Jun 20 ×2 / Jun 21 ×0. Defer until after Recovery Engine. |
+| BUG-010 | Open (Deferred) | Dashboard sleep card shows only actual sleep, not time-in-bed/awake/efficiency → apparent vs-Samsung gap. UX only; data already in Postgres. Defer until after Recovery Engine. |
 
 See BUGS.md for full detail and recommended fixes.
 
