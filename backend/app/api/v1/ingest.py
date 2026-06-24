@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -11,7 +12,10 @@ from app.auth import require_ingest_key
 from app.database import get_db
 from app.models import Device, Observation, User
 from app.schemas.ingest import IngestRequest, IngestResponse, ObservationOut
+from app.services.baseline_service import BASELINE_METRICS, recompute_baselines_for
 from app.services.extractor import extract_observations
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -94,6 +98,14 @@ async def ingest(
             saved.append({**obs_data, "id": row.id})
 
     await db.commit()
+
+    # Refresh baselines when in-scope metrics were ingested. Never fail ingest on
+    # a baseline error — ingestion reliability takes precedence.
+    if {s["metric_type"] for s in saved} & set(BASELINE_METRICS):
+        try:
+            await recompute_baselines_for(db, user.id)
+        except Exception:
+            logger.exception("baseline recompute failed for user %s", user.id)
 
     return IngestResponse(
         accepted=len(saved),
