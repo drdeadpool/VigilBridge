@@ -232,7 +232,7 @@ val state by vm.state.collectAsStateWithLifecycle()
 ## BUG-006: Resting Heart Rate Not Verified on Device
 
 **Severity:** Medium — feature may silently return `—` always  
-**Status:** Resolved — 2026-06-19
+**Status:** Closed — 2026-06-24 (fallback + 02:00 physiological-day anchor; prod migration `e1a2c4f9d3b7` confirmed applied)
 
 ### Symptom
 `RestingHeartRateRecord.BPM_AVG` aggregate was implemented in `HealthRepository` but never confirmed to return a non-null value on the S24 Ultra.
@@ -252,8 +252,8 @@ New `READ_HEART_RATE` permission added to manifest, `MainActivity.PERMISSIONS`, 
 - HTTP 202 responses with `"metric_type":"resting_hr_bpm","value":57.0,"unit":"bpm"`
 - 3 valid rows in production Postgres, `data_quality_status=valid`, value=57 bpm
 
-### Remaining Limitation
-Multiple syncs per day produce multiple rows (same value, different timestamps). Analytics must use `MIN(value) GROUP BY day`. Per-night timestamp anchor deferred to pre-baseline-engine cleanup.
+### Resolved Follow-up (2026-06-24)
+The earlier multi-row-per-day limitation is fixed. The extractor anchors each reading to 02:00 of its physiological day (commit f514d95), and migration `e1a2c4f9d3b7` (applied in prod) collapsed historical sync-time rows to one `MIN(value)` row/day. Unique key `(user_id, metric_type, timestamp)` plus upsert enforce one stable daily row. Baseline Engine v1 consumes this directly.
 
 ---
 

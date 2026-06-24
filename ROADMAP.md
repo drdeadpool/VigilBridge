@@ -22,13 +22,13 @@ Last updated: 2026-06-06. Reflects current repo + deployment state.
 
 ### Deferred to Phase 2
 
-**BUG-006 — Resting HR fallback:** Samsung Health may not write `RestingHeartRateRecord` to Health Connect. Current implementation silently returns null. Deferred because Phase 1 objective was proving reliable pipeline and autonomous collection, not data completeness. BUG-006 is a data quality/modeling issue. Will implement `HeartRateRecord.BPM_MIN` (02:00–06:00 window) fallback in Phase 2.
+**BUG-006 — Resting HR fallback:** Samsung Health does not write `RestingHeartRateRecord` to Health Connect on S24 Ultra. **Resolved 2026-06-24** (commit 0eb43fc): `HeartRateRecord.BPM_MIN` (02:00–06:00 window) fallback. Timestamp anchored to 02:00 physiological day (commit f514d95); migration `e1a2c4f9d3b7` applied in prod. BUG-006 closed.
 
 ---
 
 ## Current Phase: Phase 2 — Trend Analysis
 
-**Status: BLOCKED on ingestion hardening deployment and valid data accumulation.**
+**Status: ACTIVE.** Ingestion hardening deployed; data gate cleared 2026-06-19 (13 valid days, 660 valid obs). Baseline Engine v1 complete (commit c3c305c). Trend computation is next.
 
 ### INV-001 — RESOLVED 2026-06-06
 
@@ -123,10 +123,10 @@ All criteria must be proven with evidence:
 
 ### Wait for data accumulation gate (~2026-06-13)
 
-INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2 now blocked only on accumulating ≥7 days of real observations.
+INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Data gate cleared 2026-06-19 (13 valid days, 660 valid obs). Phase 2 unblocked; Baseline Engine v1 shipped (commit c3c305c).
 
 **While waiting — fix before Phase 2 starts:**
-1. **BUG-006** — verify resting HR or implement HeartRateRecord.BPM_MIN fallback
+1. **BUG-006** — ✅ resolved/closed 2026-06-24 (commit 0eb43fc; anchor f514d95; prod migration e1a2c4f9d3b7 applied)
 
 ---
 
@@ -143,7 +143,7 @@ INV-001 resolved and deployed. Sleep model correct, new metrics flowing. Phase 2
 
 | ID | File | Issue | Fix |
 |----|------|-------|-----|
-| BUG-006 | HealthRepository.kt | Resting HR always null — Samsung Health likely not writing `RestingHeartRateRecord` to HC | Implement `HeartRateRecord.BPM_MIN` (02:00–06:00 window) fallback. Deferred from Phase 1: not a pipeline reliability issue. |
+| BUG-006 | HealthRepository.kt | Resting HR always null — Samsung Health not writing `RestingHeartRateRecord` to HC | ✅ **Resolved 2026-06-24** (0eb43fc + anchor f514d95): `HeartRateRecord.BPM_MIN` (02:00–06:00) fallback, anchored to 02:00 physiological day; prod migration e1a2c4f9d3b7 applied. |
 | — | backend | Probe rows with UTC-buggy sleep_start_hour=17.0 in DB | Mark as probe in a `source_notes` field or filter in trend queries |
 
 ### Low priority (fix before Phase 3)

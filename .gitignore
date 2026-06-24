@@ -13,3 +13,14 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Local DB backups — may contain PII, never commit
+backend/backups/
+*_pre_anchor_*.json
+*.backup.json
+
+# Local diagnostic / device artifacts
+vigil_*
+
+# IDE config
+.idea/

@@ -1,5 +1,5 @@
 # VigilBridge — Project State
-Last updated: 2026-06-06. Written for zero-context continuation.
+Last updated: 2026-06-24. Written for zero-context continuation.
 
 ---
 
@@ -16,7 +16,7 @@ Last updated: 2026-06-06. Written for zero-context continuation.
 | Sleep duration | ✅ Working | Most recent session in last 48h, formatted `Xh Ym` |
 | Sleep bedtime (start) | ✅ Working | Formatted `EEE h:mm a` |
 | Sleep wake time (end) | ✅ Working | Formatted `h:mm a` |
-| Resting heart rate | ✅ Implemented, unverified on device | `RestingHeartRateRecord.BPM_AVG` 7-day. Samsung Health must write resting HR to HC. |
+| Resting heart rate | ✅ Working (verified in prod) | `HeartRateRecord.BPM_MIN` 02:00–06:00 fallback (Samsung Health doesn't write `RestingHeartRateRecord`). Anchored to 02:00 physiological day. 57 bpm in prod Postgres. |
 | Last sync timestamp | ✅ Working | `Instant.now()` after each load |
 | Dashboard auto-load | ✅ Working | `DashboardViewModel.init { refresh() }` |
 | Refresh button | ✅ Working | Disabled during load |
@@ -39,7 +39,7 @@ Last updated: 2026-06-06. Written for zero-context continuation.
 - **BUG-001:** onResume permission recheck missing. Fix before Phase 2 implementation.
 - **BUG-003:** `UnavailableScreen` magic literals. Low risk; fix when touching that file.
 - **BUG-004:** No error surface when HC queries fail. Fix before Phase 2.
-- **BUG-006:** Resting HR deferred to Phase 2. Will use `HeartRateRecord.BPM_MIN` (02:00–06:00) fallback.
+- **BUG-006:** ✅ Closed 2026-06-24. `HeartRateRecord.BPM_MIN` (02:00–06:00) fallback, anchored to 02:00 physiological day; prod migration `e1a2c4f9d3b7` applied.
 - **Sleep model discrepancy:** Samsung Health shows 5h 42m actual sleep; Vigil captured 4h 33m (same session). Must investigate `SleepSessionRecord` stages before Phase 2 trend computation.
 
 ---

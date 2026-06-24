@@ -1,6 +1,6 @@
 # Vigil — Claude Engineering Guide
 
-Last updated: 2026-06-06. Authoritative for all AI sessions.
+Last updated: 2026-06-24. Authoritative for all AI sessions.
 
 ---
 
@@ -18,11 +18,15 @@ This is Phase 4 of the BatmanOS personal roadmap. Target users require clinicall
 
 All criteria proven with evidence. WorkManager autonomous sync confirmed: status=202, DB 40→56, no user interaction. Deduplication live. IST-correct sleep timing in Postgres.
 
-**Phase 2: Trend Analysis** — CURRENT PHASE. Blocked on data accumulation.
+**Phase 2: Trend Analysis** — CURRENT PHASE. Data gate cleared 2026-06-19 (13 valid days, 660 valid obs). Vigil in passive data collection mode. Next major project: Research Agent MVP.
 
-INV-001 resolved 2026-06-06: Samsung Health splits one night into two `SleepSessionRecord` objects with 10-min gap. `SleepMerger.kt` now merges sessions within 30-min gaps and computes actual sleep from stage durations. New metrics: `time_in_bed_hours`, `sleep_sessions_count`. Verified: actual=342min (5h42m), timeInBed=379min (6h19m) — exact Samsung Health match.
+INV-001 resolved 2026-06-06: Samsung Health splits one night into two `SleepSessionRecord` objects with 10-min gap. `SleepMerger.kt` merges sessions within 30-min gaps and computes actual sleep from stage durations. New metrics: `time_in_bed_hours`, `sleep_sessions_count`.
 
-Do not begin Phase 2 analytics, Phase 3 (Circadian Engine), Phase 4 (Recovery Engine), or UI improvements until the ingestion hardening changes are deployed and ≥7 valid days of observations exist in Postgres.
+BUG-006 fully closed 2026-06-24: Samsung Health confirmed NOT writing `RestingHeartRateRecord` to Health Connect on S24 Ultra. Fix: `HeartRateRecord.BPM_MIN` (02:00–06:00 device-local window) as fallback. Verified: 57 bpm in Postgres. Commit 0eb43fc. New permission: `READ_HEART_RATE`. Resting-HR timestamp anchored to 02:00 physiological day (commit f514d95); migration `e1a2c4f9d3b7` applied in prod, collapsing all syncs to one stable row/day.
+
+Known investigation (deferred): sleep discrepancy — Samsung Health shows 7h55m, VigilBridge records 7h12m (43-min gap). Cause unknown.
+
+Baseline Engine v1 shipped 2026-06-24 (commit c3c305c, 32/32 tests): per-metric mean/std/n/min/max over 7/14/30-day valid days + Severity v1, endpoints `GET /baselines/{user_id}` and `/baselines/{user_id}/status`. resting_hr anchor prerequisite resolved (see above). Remaining Phase 2 metric (not a baseline blocker): active_energy (`ActiveCaloriesBurnedRecord`). Trend computation is the next build.
 
 ---
 
@@ -30,7 +34,7 @@ Do not begin Phase 2 analytics, Phase 3 (Circadian Engine), Phase 4 (Recovery En
 
 Never skip a level. Each is a prerequisite for the next.
 
-1. **Reliable data ingestion** ← current
+1. **Reliable data ingestion** ✅
 2. Validation and deduplication
 3. Trend analysis (7/14/30-day)
 4. Circadian analysis (sleep timing, phase)
@@ -129,7 +133,7 @@ Before implementing anything new, determine its priority level and confirm all p
 - Corrupt records exist (BUG-002 — a StepsRecord with startTime >= endTime). Aggregate API bypasses this.
 - `pm grant` does not work for HC data permissions. User must grant via HC permission dialog.
 - `READ_HEALTH_DATA_IN_BACKGROUND` required for WorkManager background reads. Must be in manifest AND runtime permission set AND granted by user.
-- Samsung Health may not write `RestingHeartRateRecord` to HC. Use `HeartRateRecord.BPM_MIN` (2am–6am) as fallback if confirmed unavailable (BUG-006).
+- Samsung Health does NOT write `RestingHeartRateRecord` to HC on S24 Ultra (confirmed, 0 records in 13-day audit). `HeartRateRecord.BPM_MIN` (02:00–06:00 window) implemented as Stage 2 fallback in `readRestingHR()`. Permission `READ_HEART_RATE` required in manifest AND runtime permission set.
 
 ### Device
 - Target: Samsung Galaxy S24 Ultra, serial R5CXB2KE0VF, ADB accessible.
@@ -159,7 +163,7 @@ Keep BUGS.md current. Close bugs by marking status "Resolved" with fix descripti
 | BUG-003 | Open | UnavailableScreen uses magic int literals |
 | BUG-004 | Resolved | Typed HC outcomes distinguish no-data, partial failure, and total failure |
 | BUG-005 | Open | collectAsState vs collectAsStateWithLifecycle |
-| BUG-006 | Open | RestingHR unverified on S24 Ultra |
+| BUG-006 | Resolved | HeartRateRecord.BPM_MIN fallback (02:00–06:00), 57 bpm verified in Postgres. Commit 0eb43fc. |
 | BUG-007 | Open | versionName = "1.0" should be "0.3" |
 
 See BUGS.md for full detail and recommended fixes.
