@@ -165,6 +165,8 @@ Keep BUGS.md current. Close bugs by marking status "Resolved" with fix descripti
 | BUG-005 | Open | collectAsState vs collectAsStateWithLifecycle |
 | BUG-006 | Resolved | HeartRateRecord.BPM_MIN fallback (02:00–06:00), 57 bpm verified in Postgres. Commit 0eb43fc. |
 | BUG-007 | Open | versionName = "1.0" should be "0.3" |
+| BUG-008 | Resolved | API key exposure + unauth read endpoints — rotated key, READ_API_KEY, docs disabled (2026-06-06) |
+| BUG-009 | Open (Deferred) | Sleep dated by local sleep-start, no physiological-night anchor → Jun 20 ×2 / Jun 21 ×0. Defer until after Recovery Engine. |
 
 See BUGS.md for full detail and recommended fixes.
 

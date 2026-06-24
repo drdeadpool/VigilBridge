@@ -1,5 +1,5 @@
 # VigilBridge — Bug Registry
-Last updated: 2026-06-06.
+Last updated: 2026-06-24.
 
 ---
 
@@ -357,3 +357,39 @@ otherwise.
 - Compare credentials with `secrets.compare_digest`.
 - Disable production OpenAPI/Swagger/ReDoc surfaces by default.
 - Remove plaintext credentials from the current repository tree.
+
+---
+
+## BUG-009: Sleep Sessions Dated by Local Sleep-Start (No Physiological-Night Anchor)
+
+**Severity:** Medium — data modeling; affects valid-day counts, sleep trends, future recovery scoring
+**Status:** Open — Deferred (until after Recovery Engine)
+**Discovered:** 2026-06-24
+
+### Symptom
+`sleep_duration_hours` is timestamped at local sleep START, so a night's calendar date
+shifts with bedtime. Observed in prod for user `0812485a`:
+- Jun 20 contains two sleep sessions (start 01:22 = 4.52h, and 22:39 = 7.45h).
+- Jun 21 contains none — the Jun 20→21 night (start 22:39) was dated to Jun 20.
+
+### Root Cause
+Sleep dating uses the local date of `sleepStartMs`. Pre-midnight bedtimes attribute to
+the evening's date; post-midnight bedtimes to the next date. There is no
+physiological-night anchor — contrast `resting_hr_bpm`, which BUG-006 anchored to 02:00
+local. One physiological night can therefore double-count on one calendar day or vanish
+from the adjacent day.
+
+### Consequence
+- Valid-day miscounting (Valid Day v1 requires all 3 metrics present per local day).
+- Trend distortion for `sleep_duration_hours`.
+- Future Recovery Engine inaccuracy (sleep is a primary recovery input).
+
+### Candidate Solution (not yet designed)
+- Physiological-night anchoring (assign each session to one night via a fixed cut, e.g.
+  wake-date or a noon→noon / 18:00→18:00 window), OR
+- A sleep-day normalization layer applied at read/aggregation time.
+Decision deferred. Do NOT implement before Recovery Engine.
+
+### Evidence
+Backend audit 2026-06-24 (prod): `sleep_duration_hours` event-date rows show Jun 20 ×2,
+Jun 21 ×0. Capture start `06-20 22:39` → end `06-21 06:44`, actualMin 447.
