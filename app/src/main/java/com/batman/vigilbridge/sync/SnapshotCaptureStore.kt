@@ -51,4 +51,5 @@ private fun RawDashboard.toSnapshot(capturedAt: Instant) = VitalsSnapshot(
     sleepStartMs = lastSleep?.startTime?.toEpochMilli(),
     sleepEndMs = lastSleep?.endTime?.toEpochMilli(),
     restingHrBpm = restingHeartRateBpm,
+    activeEnergyKcal = activeEnergyKcal,
 )

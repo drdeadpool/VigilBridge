@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [VitalsSnapshot::class, SyncOutboxItem::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class VigilDatabase : RoomDatabase() {
@@ -44,13 +44,21 @@ abstract class VigilDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE vitals_snapshots ADD COLUMN activeEnergyKcal REAL"
+                )
+            }
+        }
+
         fun get(context: Context): VigilDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 VigilDatabase::class.java,
                 "vigil.db"
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }

@@ -31,9 +31,10 @@ data class HealthLoadResult(
     val steps30d: MetricRead<Long>,
     val lastSleep: MetricRead<SleepSummary>,
     val restingHeartRate: MetricRead<Long>,
+    val activeEnergy: MetricRead<Double> = MetricRead.NoData,
 ) {
     private val reads: List<MetricRead<*>>
-        get() = listOf(stepsToday, steps7d, steps30d, lastSleep, restingHeartRate)
+        get() = listOf(stepsToday, steps7d, steps30d, lastSleep, restingHeartRate, activeEnergy)
 
     val failures: List<HealthReadFailure>
         get() = reads.mapNotNull { (it as? MetricRead.Failure)?.error }
@@ -54,6 +55,7 @@ data class HealthLoadResult(
             steps30d = steps30d.valueOrNull(),
             lastSleep = lastSleep.valueOrNull(),
             restingHeartRateBpm = restingHeartRate.valueOrNull(),
+            activeEnergyKcal = activeEnergy.valueOrNull(),
         )
 }
 

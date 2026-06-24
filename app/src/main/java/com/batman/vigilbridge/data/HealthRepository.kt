@@ -3,6 +3,7 @@ package com.batman.vigilbridge.data
 import android.os.RemoteException
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
@@ -25,6 +26,7 @@ data class RawDashboard(
     val steps30d: Long?,
     val lastSleep: SleepSummary?,
     val restingHeartRateBpm: Long?,
+    val activeEnergyKcal: Double?,
 )
 
 class HealthRepository(
@@ -51,7 +53,22 @@ class HealthRepository(
             ),
             lastSleep = readLastSleep(now),
             restingHeartRate = readRestingHR(now),
+            activeEnergy = aggregateActiveEnergy(
+                TimeRangeFilter.between(startTime = todayStart, endTime = now)
+            ),
         )
+    }
+
+    private suspend fun aggregateActiveEnergy(
+        filter: TimeRangeFilter,
+    ): MetricRead<Double> = readMetric("active_energy") {
+        val total = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+                timeRangeFilter = filter,
+            )
+        )[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]
+        total?.let { MetricRead.Value(it.inKilocalories) } ?: MetricRead.NoData
     }
 
     private suspend fun aggregateSteps(

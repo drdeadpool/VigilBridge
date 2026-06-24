@@ -43,10 +43,40 @@ class HealthReadResultTest {
             ),
             lastSleep = failure("sleep", HealthReadFailureKind.REMOTE),
             restingHeartRate = failure("resting_hr", HealthReadFailureKind.IO),
+            activeEnergy = failure("active_energy", HealthReadFailureKind.IO),
         )
 
         assertTrue(result.allReadsFailed)
         assertTrue(result.hasRetryableFailures)
+    }
+
+    @Test
+    fun `active energy value maps into dashboard`() {
+        val result = HealthLoadResult(
+            stepsToday = MetricRead.Value(0),
+            steps7d = MetricRead.Value(0),
+            steps30d = MetricRead.Value(0),
+            lastSleep = MetricRead.NoData,
+            restingHeartRate = MetricRead.NoData,
+            activeEnergy = MetricRead.Value(412.5),
+        )
+
+        assertFalse(result.allReadsFailed)
+        assertEquals(412.5, result.dashboard.activeEnergyKcal!!, 0.0001)
+    }
+
+    @Test
+    fun `active energy no-data leaves dashboard null`() {
+        val result = HealthLoadResult(
+            stepsToday = MetricRead.Value(0),
+            steps7d = MetricRead.Value(0),
+            steps30d = MetricRead.Value(0),
+            lastSleep = MetricRead.NoData,
+            restingHeartRate = MetricRead.NoData,
+            activeEnergy = MetricRead.NoData,
+        )
+
+        assertNull(result.dashboard.activeEnergyKcal)
     }
 
     private fun failure(

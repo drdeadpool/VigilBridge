@@ -14,4 +14,5 @@ data class VitalsSnapshot(
     val sleepStartMs: Long?,
     val sleepEndMs: Long?,
     val restingHrBpm: Long?,
+    val activeEnergyKcal: Double?,
 )

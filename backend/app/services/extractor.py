@@ -16,6 +16,7 @@ FHIR metric_type codes follow LOINC conventions where applicable:
   resting_hr     → 40443-4
   spo2           → 2708-6
   respiratory_rate → 9279-1
+  active_energy  → 41981-2
 """
 
 from datetime import datetime, timedelta, timezone
@@ -223,6 +224,19 @@ def _extract_vigil_snapshot(payload: dict, source: str) -> list[dict]:
                 "timestamp": ts,
                 "source": source,
             })
+
+    # active_energy: cumulative kcal for the local day, read via aggregate(ACTIVE_CALORIES_TOTAL).
+    # Like steps, uses the sync timestamp — intraday values rise through the day; daily total is
+    # MAX(value) per day at the analytics layer. today-only scope (no 7d/30d).
+    active_energy = payload.get("activeEnergyKcal") or payload.get("active_energy_kcal")
+    if active_energy is not None:
+        results.append({
+            "metric_type": "active_energy",
+            "value": float(active_energy),
+            "unit": "kcal",
+            "timestamp": ts,
+            "source": source,
+        })
 
     # resting_hr_bpm: exactly one observation per physiological day, anchored to 02:00 local.
     # BUG-006 reads BPM_MIN over a 02:00-06:00 window whose date is "today" when the capture

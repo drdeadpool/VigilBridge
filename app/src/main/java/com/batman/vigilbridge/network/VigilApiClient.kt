@@ -49,7 +49,7 @@ object VigilApiClient {
 
         val payload = JSONObject().apply {
             put("record_type", "snapshot")
-            put("payloadVersion", 2)
+            put("payloadVersion", 3)
             put("timestampMs", timestamp.toEpochMilli())
             put("timezone", ZoneId.systemDefault().id)
             raw.stepsToday?.let { put("stepsToday", it) }
@@ -63,6 +63,7 @@ object VigilApiClient {
                 put("sleepSessionsCount", sleep.sessionCount)
             }
             raw.restingHeartRateBpm?.let { put("restingHrBpm", it) }
+            raw.activeEnergyKcal?.let { put("activeEnergyKcal", it) }
         }
 
         return JSONObject().apply {
