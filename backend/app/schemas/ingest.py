@@ -37,5 +37,6 @@ class ObservationOut(BaseModel):
 
 
 class IngestResponse(BaseModel):
+    user_id: str | None = None
     accepted: int
     observations: list[ObservationOut]

@@ -118,6 +118,7 @@ async def ingest(
             logger.exception("state recompute failed for user %s", user.id)
 
     return IngestResponse(
+        user_id=str(user.id),
         accepted=len(saved),
         observations=[
             ObservationOut(
