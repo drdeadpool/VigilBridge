@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Annotated
 
@@ -11,7 +12,9 @@ from app.services.state_service import (
     get_current_state,
     get_state_history,
 )
+from app.services.validation_service import create_or_update as _upsert_validation
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -22,7 +25,12 @@ async def current_state(
     _: Annotated[None, Depends(require_read_key)],
     period: int = Query(default=30, ge=3, le=90),
 ) -> dict:
-    return await get_current_state(db, user_id, period_days=period)
+    result = await get_current_state(db, user_id, period_days=period)
+    try:
+        await _upsert_validation(db, result)
+    except Exception:
+        logger.exception("validation upsert failed for user %s", user_id)
+    return result
 
 
 @router.get("/state/{user_id}/history")
@@ -43,4 +51,9 @@ async def recompute_state(
     _: Annotated[None, Depends(require_read_key)],
     period: int = Query(default=30, ge=3, le=90),
 ) -> dict:
-    return await compute_and_store_state(db, user_id, period_days=period)
+    result = await compute_and_store_state(db, user_id, period_days=period)
+    try:
+        await _upsert_validation(db, result)
+    except Exception:
+        logger.exception("validation upsert failed for user %s", user_id)
+    return result

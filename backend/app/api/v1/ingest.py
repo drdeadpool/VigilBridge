@@ -15,6 +15,7 @@ from app.schemas.ingest import IngestRequest, IngestResponse, ObservationOut
 from app.services.baseline_service import BASELINE_METRICS, recompute_baselines_for
 from app.services.extractor import extract_observations
 from app.services.state_service import compute_and_store_state
+from app.services.validation_service import create_or_update as _upsert_validation
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,11 @@ async def ingest(
         except Exception:
             logger.exception("baseline recompute failed for user %s", user.id)
         try:
-            await compute_and_store_state(db, user.id)
+            state_result = await compute_and_store_state(db, user.id)
+            try:
+                await _upsert_validation(db, state_result)
+            except Exception:
+                logger.exception("validation upsert failed for user %s", user.id)
         except Exception:
             logger.exception("state recompute failed for user %s", user.id)
 

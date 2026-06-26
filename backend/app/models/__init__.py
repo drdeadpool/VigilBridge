@@ -4,5 +4,6 @@ from app.models.device import Device
 from app.models.observation import Observation
 from app.models.state_estimate import StateEstimate
 from app.models.user import User
+from app.models.validation_record import ValidationRecord
 
-__all__ = ["Baseline", "Constraint", "Device", "Observation", "StateEstimate", "User"]
+__all__ = ["Baseline", "Constraint", "Device", "Observation", "StateEstimate", "User", "ValidationRecord"]
