@@ -19,7 +19,7 @@ The Engineering Foundation is complete as of Sprint 3 (commit 2182269). All prod
 | Component | Status | Evidence |
 |---|---|---|
 | Backend API | Live | vigilbridge.onrender.com, Render free tier |
-| Database | Live | Postgres, 1126 observations, 1 user |
+| Database | Live | Postgres, 1,144 valid observations, 4 users (1 active canonical) |
 | Alembic migrations | Applied | 7 migrations, head: `a9f4e2d1b6c8` |
 | Tests | 146/146 passing | Python 3.14.5, pytest 9.1.1 |
 | Android app | Deployed | Debug APK, R5CXB2KE0VF, WorkManager proven |
@@ -171,12 +171,28 @@ Firing threshold: |z| ≥ 1 SD from personal baseline.
 
 ## Immediate Operational Priorities
 
-1. Verify production daily — `curl https://vigilbridge.onrender.com/health`
-2. Run Human State Engine continuously (fires automatically on each ingest)
-3. Collect validation records (automatic)
-4. Record operator assessments via PATCH /validation/{id}
-5. Review agreement metrics via GET /agreement/{user_id}
-6. Build ≥30 days of operator-assessed records before any engineering review
+1. **Run `python backend/scripts/backup_db.py`** — set `VIGIL_DB_URL` first; zero backups taken (data loss risk)
+2. Verify production daily — `curl https://vigilbridge.onrender.com/health`
+3. Run Human State Engine continuously (fires automatically on each ingest)
+4. Collect validation records (automatic)
+5. Record operator assessments via PATCH /validation/{id}
+6. Review agreement metrics via GET /agreement/{user_id}
+7. Build ≥30 days of operator-assessed records before any engineering review (Gate 1)
+
+---
+
+## Scientific Operations Sprint 0 Deliverables (2026-06-26)
+
+| Document | Purpose |
+|---|---|
+| `docs/ENGINEERING_FOUNDATION_CLOSURE.md` | Formal closure of Engineering Foundation v1.0 |
+| `docs/SCIENTIFIC_OPS_DAY0_REPORT.md` | Pipeline verification + Day 0 operator action log |
+| `docs/SCIENTIFIC_OPS_DASHBOARD_BASELINE.md` | Day 0 KPI baseline — all Scientific Ops metrics |
+| `docs/SCIENTIFIC_OPS_SOP.md` | Daily / weekly / monthly operating procedure |
+| `docs/SCIENTIFIC_OPS_RISK_REGISTER.md` | 8 scientific risks, likelihood, impact, mitigation |
+| `docs/SCIENTIFIC_OPS_EVIDENCE_GATES.md` | 8 evidence gates governing all future engineering |
+
+**Next milestone:** Gate 1 — ≥30 operator-assessed validation days, pending_rate < 0.10.
 
 ---
 
@@ -203,5 +219,5 @@ Firing threshold: |z| ≥ 1 SD from personal baseline.
 | Backend URL | https://vigilbridge.onrender.com |
 | Render tier | Free (cold start ~30s after idle) |
 | GitHub | drdeadpool/VigilBridge, auto-deploy from main |
-| Last commit | 2182269 |
+| Last commit | 2eca0ef (Scientific Operations Sprint 0) |
 | Migration head | a9f4e2d1b6c8 (create_validation_records) |
