@@ -88,7 +88,7 @@ Changes require operational evidence. No exceptions without an ADR.
 
 | Table | Rows (approx) | Purpose |
 |---|---|---|
-| users | 1 | User registry (external_id → UUID) |
+| users | 4 (1 active canonical, 3 legacy/test) | User registry (external_id → UUID) |
 | devices | 1 | Device registry |
 | observations | 1126 | Raw biometric measurements |
 | baselines | ~3–9 | Per-metric mean/std/n per period |
