@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1 import baselines, health, ingest, state, stats, trends, validation
+from app.api.v1 import agreement, baselines, health, ingest, state, stats, trends, validation
 from app.config import settings
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -35,3 +35,4 @@ app.include_router(trends.router)
 app.include_router(baselines.router)
 app.include_router(state.router)
 app.include_router(validation.router)
+app.include_router(agreement.router)
